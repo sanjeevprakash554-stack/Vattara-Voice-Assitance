@@ -78,7 +78,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     """Standardized handler for schema validation failures."""
     logger.warning("Validation error on %s: %s", request.url.path, exc.errors())
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content={
             "detail": "Request payload validation failed",
             "errors": jsonable_encoder(exc.errors()),

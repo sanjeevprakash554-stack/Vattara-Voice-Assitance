@@ -37,6 +37,9 @@ def test_alembic_upgrade_and_downgrade(tmp_path: Path) -> None:
         "appointments",
         "call_histories",
         "reminders",
+        "business_working_hours",
+        "service_categories",
+        "business_services",
         "alembic_version",
     }
     assert expected_tables.issubset(table_names), f"Missing tables: {expected_tables - table_names}"
@@ -47,6 +50,14 @@ def test_alembic_upgrade_and_downgrade(tmp_path: Path) -> None:
     assert "business_type" in columns
     assert "email" in columns
     assert "is_active" in columns
+    assert "website" in columns
+    assert "timezone" in columns
+
+    # Verify column structures on customers table
+    cust_columns = {col["name"]: col for col in inspector.get_columns("customers")}
+    assert "address" in cust_columns
+    assert "notes" in cust_columns
+    assert "is_active" in cust_columns
 
     # Verify column structures on users table
     user_columns = {col["name"]: col for col in inspector.get_columns("users")}

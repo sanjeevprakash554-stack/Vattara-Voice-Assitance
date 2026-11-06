@@ -7,10 +7,13 @@ from app.database.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.appointment import Appointment
+    from app.models.business_service import BusinessService
     from app.models.call_history import CallHistory
     from app.models.customer import Customer
     from app.models.reminder import Reminder
+    from app.models.service_category import ServiceCategory
     from app.models.user import User
+    from app.models.working_hours import BusinessWorkingHours
 
 
 class Business(Base, TimestampMixin):
@@ -24,6 +27,10 @@ class Business(Base, TimestampMixin):
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     phone_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    website: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    timezone: Mapped[str] = mapped_column(String(50), default="UTC", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
 
     # Relationships
@@ -49,6 +56,21 @@ class Business(Base, TimestampMixin):
     )
     reminders: Mapped[list["Reminder"]] = relationship(
         "Reminder",
+        back_populates="business",
+        cascade="all, delete-orphan",
+    )
+    working_hours: Mapped[list["BusinessWorkingHours"]] = relationship(
+        "BusinessWorkingHours",
+        back_populates="business",
+        cascade="all, delete-orphan",
+    )
+    service_categories: Mapped[list["ServiceCategory"]] = relationship(
+        "ServiceCategory",
+        back_populates="business",
+        cascade="all, delete-orphan",
+    )
+    services: Mapped[list["BusinessService"]] = relationship(
+        "BusinessService",
         back_populates="business",
         cascade="all, delete-orphan",
     )

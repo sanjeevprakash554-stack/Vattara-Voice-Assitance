@@ -240,7 +240,61 @@ Restricted exclusively to `SUPER_ADMIN`.
 
 ---
 
-## 4. System Health Endpoints (`/api/v1/health`)
+## 4. Business Management Endpoints (`/api/v1/business`)
+
+### 4.1 Business Profile
+- **GET `/api/v1/business/profile`**: View authenticated tenant profile (accessible by Admin & Staff).
+- **PUT `/api/v1/business/profile`**: Update tenant profile fields (restricted to `BUSINESS_ADMIN`).
+  - Fields: `business_name`, `business_type`, `email`, `phone_number`, `address`, `website`, `description`, `logo_url`, `timezone`.
+
+### 4.2 Weekly Working Hours
+- **GET `/api/v1/business/working-hours`**: Retrieve operating schedule (days 0–6: Monday–Sunday) with opening/closing times and `is_closed` flags.
+- **PUT `/api/v1/business/working-hours`**: Create or update schedule for specified days (restricted to `BUSINESS_ADMIN`). Validates that `opening_time < closing_time` for open days.
+
+### 4.3 Service Categories
+- **POST `/api/v1/business/categories`**: Create service category (Admin only). Prevents duplicate active category names within tenant.
+- **GET `/api/v1/business/categories`**: List tenant categories with optional `?is_active=true` filter.
+- **GET `/api/v1/business/categories/{category_id}`**: Retrieve category details.
+- **PUT `/api/v1/business/categories/{category_id}`**: Update category name, description, or status (Admin only).
+- **DELETE `/api/v1/business/categories/{category_id}`**: Soft-deactivate category (`is_active = false`).
+
+### 4.4 Business Services
+- **POST `/api/v1/business/services`**: Create commercial service offering with duration, price, currency, and category mapping.
+- **GET `/api/v1/business/services`**: List services with query filters:
+  - `?category_id=<int>`
+  - `?search=<text>` (case-insensitive name and description matching)
+  - `?is_active=<bool>`
+  - `?skip=0&limit=50` (pagination)
+- **GET `/api/v1/business/services/{service_id}`**: Retrieve service details.
+- **PUT `/api/v1/business/services/{service_id}`**: Update service offering attributes.
+- **DELETE `/api/v1/business/services/{service_id}`**: Soft-deactivate service offering.
+
+---
+
+## 5. Customer Management Endpoints (`/api/v1/customers`)
+
+### 5.1 Customer Directory
+- **POST `/api/v1/customers`**: Register customer with `customer_name`, `phone_number`, `email`, `address`, `notes`. Prevents duplicate active phone numbers within the tenant.
+- **GET `/api/v1/customers`**: Search customer directory:
+  - `?search=<text>` (case-insensitive match against name, phone number, and email)
+  - `?is_active=<bool>`
+  - `?skip=0&limit=50`
+- **GET `/api/v1/customers/{customer_id}`**: Retrieve customer profile.
+- **PUT `/api/v1/customers/{customer_id}`**: Update customer contact details and notes.
+- **DELETE `/api/v1/customers/{customer_id}`**: Soft-deactivate customer record (`is_active = false`).
+
+### 5.2 Customer Interaction Dossier
+- **GET `/api/v1/customers/{customer_id}/history`**: Comprehensive interaction history aggregation returning:
+  - Full customer profile
+  - Chronological list of appointments
+  - Chronological list of telephony call history (types, status, duration, recording URLs)
+  - `total_calls`: Integer count
+  - `total_appointments`: Integer count
+  - `last_interaction_date`: Computed most recent timestamp among calls and scheduled appointments
+
+---
+
+## 6. System Health Endpoints (`/api/v1/health`)
 
 - **GET `/`**: Service root information.
 - **GET `/api/v1/health`**: Backend operational status.

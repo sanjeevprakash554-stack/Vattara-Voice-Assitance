@@ -261,13 +261,46 @@ Once the server is running, the interactive documentation interfaces are accessi
 
 ---
 
-## 6. Initial API Endpoints
+## 6. Available API Endpoints (Phases 1 - 4)
 
-| Method | Path | Summary | Description |
-| :--- | :--- | :--- | :--- |
-| **GET** | `/` | Root Info | Returns application name, version, and operational status. |
-| **GET** | `/api/v1/health` | Backend Health | Returns backend service status for uptime monitoring. |
-| **GET** | `/api/v1/health/database` | Database Health | Executes a `SELECT 1` ping across the SQLAlchemy pool. |
+| Tag | Method | Path | Summary | Access |
+| :--- | :--- | :--- | :--- | :--- |
+| **Authentication** | `POST` | `/api/v1/auth/register` | Business & Admin Registration | Public |
+| **Authentication** | `POST` | `/api/v1/auth/login` | User Login & JWT Issuance | Public |
+| **Authentication** | `GET` | `/api/v1/auth/me` | Authenticated User Profile | Bearer Token |
+| **Authentication** | `PUT` | `/api/v1/auth/me` | Update User Profile | Bearer Token |
+| **Authentication** | `POST` | `/api/v1/auth/change-password` | Change User Password | Bearer Token |
+| **Users** | `POST` | `/api/v1/users` | Create Staff Member | Business Admin |
+| **Users** | `GET` | `/api/v1/users` | List Staff in Business | Business Admin |
+| **Users** | `GET` | `/api/v1/users/{id}` | Get Staff Member Details | Business Admin |
+| **Users** | `PUT` | `/api/v1/users/{id}` | Update Staff Member | Business Admin |
+| **Users** | `DELETE` | `/api/v1/users/{id}` | Deactivate Staff Member | Business Admin |
+| **Business Profile**| `GET` | `/api/v1/business/profile` | Get Business Profile | Admin & Staff |
+| **Business Profile**| `PUT` | `/api/v1/business/profile` | Update Business Details | Business Admin |
+| **Working Hours** | `GET` | `/api/v1/business/working-hours` | Get Weekly Schedule | Admin & Staff |
+| **Working Hours** | `PUT` | `/api/v1/business/working-hours` | Update Weekly Schedule | Business Admin |
+| **Categories** | `POST` | `/api/v1/business/categories` | Create Service Category | Business Admin |
+| **Categories** | `GET` | `/api/v1/business/categories` | List Service Categories | Admin & Staff |
+| **Categories** | `GET` | `/api/v1/business/categories/{id}` | Get Category Details | Admin & Staff |
+| **Categories** | `PUT` | `/api/v1/business/categories/{id}` | Update Service Category | Business Admin |
+| **Categories** | `DELETE`| `/api/v1/business/categories/{id}`| Deactivate Category | Business Admin |
+| **Services** | `POST` | `/api/v1/business/services` | Create Business Service | Business Admin |
+| **Services** | `GET` | `/api/v1/business/services` | List & Filter Services | Admin & Staff |
+| **Services** | `GET` | `/api/v1/business/services/{id}` | Get Service Details | Admin & Staff |
+| **Services** | `PUT` | `/api/v1/business/services/{id}` | Update Business Service | Business Admin |
+| **Services** | `DELETE`| `/api/v1/business/services/{id}`| Deactivate Service | Business Admin |
+| **Customers** | `POST` | `/api/v1/customers` | Create Customer Profile | Admin & Staff |
+| **Customers** | `GET` | `/api/v1/customers` | Search Customer Directory | Admin & Staff |
+| **Customers** | `GET` | `/api/v1/customers/{id}` | Get Customer Details | Admin & Staff |
+| **Customers** | `PUT` | `/api/v1/customers/{id}` | Update Customer Details | Admin & Staff |
+| **Customers** | `DELETE`| `/api/v1/customers/{id}` | Deactivate Customer | Admin & Staff |
+| **Customer History**|`GET` | `/api/v1/customers/{id}/history`| Customer Interaction History | Admin & Staff |
+| **Super Admin** | `GET` | `/api/v1/admin/businesses` | List All Platform Tenants | Super Admin |
+| **Super Admin** | `GET` | `/api/v1/admin/businesses/{id}` | Get Tenant Telemetry | Super Admin |
+| **Super Admin** | `PATCH` | `/api/v1/admin/businesses/{id}/status` | Activate/Deactivate Tenant | Super Admin |
+| **Health** | `GET` | `/` | Root Information | Public |
+| **Health** | `GET` | `/api/v1/health` | Backend Health Probe | Public |
+| **Health** | `GET` | `/api/v1/health/database` | PostgreSQL Health Probe | Public |
 
 ---
 
@@ -276,36 +309,34 @@ Once the server is running, the interactive documentation interfaces are accessi
 Run the complete test suite with pytest:
 
 ```bash
-# From the project root:
-pytest
-
-# Or inside the backend/ directory with detailed verbosity:
+# Inside the backend/ directory with detailed verbosity:
 cd backend
 pytest -v
 ```
 
-All 17 automated tests will execute with mock isolation and in-memory test databases:
-- **Root & Swagger Documentation** (2 tests)
+All **84 automated tests** execute with strict tenant isolation, role verification, and database transaction rollbacks:
+- **Root & Swagger Documentation** (3 tests)
 - **Health Checks & Database Ping Diagnostics** (4 tests)
-- **Alembic Migration Forward & Rollback Life Cycle** (1 test)
-- **SQLAlchemy Models & Multi-Tenant Relationships** (9 tests)
-  - Business creation and audit timestamps
-  - Business-User relationship and bcrypt password encryption
-  - Business-Customer relationship
-  - Customer-Appointment-Business relationships
-  - CallHistory logging and customer link preservation
-  - Appointment-Reminder relationship
-  - Full Business cascade delete integrity
-  - Customer delete `SET NULL` on CallHistory
-  - Unique email constraints enforcement
+- **Alembic Database Migrations** (1 test)
+- **SQLAlchemy Models & Database Relationships** (9 tests)
+- **Authentication & Security** (16 tests)
+- **Multi-Tenant User Management & RBAC** (9 tests)
+- **Super Admin Platform Controls** (5 tests)
+- **Multi-Tenancy Security & Data Leakage Prevention** (6 tests)
+- **Business Profile Management** (5 tests)
+- **Business Working Hours** (4 tests)
+- **Service Categories & Business Services** (13 tests)
+- **Customer Directory & Interaction Dossier** (9 tests)
 
 ---
 
 ## 8. License & Development Roadmap
 
-This foundation serves as the core layer for upcoming milestones:
-1. **Multi-tenant Business & User Management** (Authentication, JWT tokens, RBAC).
-2. **Telephony Integration** (Twilio Voice, Media WebSockets).
-3. **Conversational Engine** (OpenAI Realtime API, tool calling for bookings).
-4. **Calendar & Notification Integrations** (Google Calendar, Twilio SMS).
-5. **Frontend Management Dashboard** (React + Vite + Tailwind CSS).
+1. [x] **Phase 1: Project Setup & FastAPI Foundation**
+2. [x] **Phase 2: PostgreSQL Database Configuration & SQLAlchemy Models**
+3. [x] **Phase 3: Authentication, Authorization, Staff Management & Multi-Tenant Security**
+4. [x] **Phase 4: Business & Customer Management (Profile, Hours, Catalog, CRM, History)**
+5. [ ] **Phase 5: Telephony Integration (Twilio Voice, Media WebSockets, Inbound/Outbound)**
+6. [ ] **Phase 6: Conversational Engine (OpenAI Realtime API, Custom Tools, Booking Flow)**
+7. [ ] **Phase 7: Calendar & Notification Integrations (Google Calendar, Twilio SMS)**
+8. [ ] **Phase 8: Frontend Management Dashboard (React + Vite + Tailwind CSS)**

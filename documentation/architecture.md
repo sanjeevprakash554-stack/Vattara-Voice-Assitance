@@ -62,7 +62,7 @@ The backend follows a clean, modular, layered architecture designed for strict s
 
 ---
 
-## 4. Database Schema & Entity-Relationship Model (Phase 2)
+## 4. Database Schema & Entity-Relationship Model (Phases 2 & 4)
 
 ```mermaid
 erDiagram
@@ -71,6 +71,10 @@ erDiagram
     BUSINESSES ||--o{ APPOINTMENTS : "manages (1:N)"
     BUSINESSES ||--o{ CALL_HISTORIES : "records (1:N)"
     BUSINESSES ||--o{ REMINDERS : "schedules (1:N)"
+    BUSINESSES ||--o{ BUSINESS_WORKING_HOURS : "operates (1:N)"
+    BUSINESSES ||--o{ SERVICE_CATEGORIES : "groups (1:N)"
+    BUSINESSES ||--o{ BUSINESS_SERVICES : "offers (1:N)"
+    SERVICE_CATEGORIES ||--o{ BUSINESS_SERVICES : "categorizes (1:N)"
     CUSTOMERS ||--o{ APPOINTMENTS : "books (1:N)"
     CUSTOMERS ||--o{ CALL_HISTORIES : "participates (1:N)"
     APPOINTMENTS ||--o{ REMINDERS : "triggers (1:N)"
@@ -82,6 +86,46 @@ erDiagram
         string email UK
         string phone_number
         text address
+        string website
+        text description
+        string logo_url
+        string timezone
+        boolean is_active
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    BUSINESS_WORKING_HOURS {
+        int id PK
+        int business_id FK
+        int day_of_week
+        time opening_time
+        time closing_time
+        boolean is_closed
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    SERVICE_CATEGORIES {
+        int id PK
+        int business_id FK
+        string category_name
+        text description
+        boolean is_active
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    BUSINESS_SERVICES {
+        int id PK
+        int business_id FK
+        int category_id FK
+        string service_name
+        text description
+        int duration_minutes
+        decimal price
+        string currency
+        boolean is_active
         timestamp created_at
         timestamp updated_at
     }
@@ -93,6 +137,7 @@ erDiagram
         string email UK
         string password_hash
         string role
+        boolean is_active
         timestamp created_at
         timestamp updated_at
     }
@@ -103,6 +148,9 @@ erDiagram
         string customer_name
         string phone_number
         string email
+        text address
+        text notes
+        boolean is_active
         timestamp created_at
         timestamp updated_at
     }
@@ -145,10 +193,11 @@ erDiagram
 ```
 
 ### Relationship & Integrity Rules:
-1. **Multi-Tenant Ownership**: `businesses` is the root aggregate entity. Deleting a business initiates a `CASCADE` delete removing all associated users, customers, appointments, reminders, and call histories.
-2. **Customer Appointments**: Deleting a customer deletes their appointments via `CASCADE`.
-3. **Audit Trail Preservation**: Deleting a customer sets `call_histories.customer_id` to `NULL` (`ondelete="SET NULL"`), ensuring inbound telephony logs, recordings, and duration metrics remain preserved for business accounting and analytics.
-4. **Appointment Reminders**: Deleting an appointment cascades to delete its linked pending/sent reminders (`CASCADE`).
+1. **Multi-Tenant Ownership**: `businesses` is the root aggregate entity. Deleting a business initiates a `CASCADE` delete removing all associated users, customers, appointments, reminders, call histories, working hours, service categories, and services.
+2. **Weekly Working Hours**: Scoped to each business tenant, enforced with a unique constraint on `(business_id, day_of_week)` (days 0–6: Monday–Sunday).
+3. **Service Offerings & Categories**: Business services belong strictly to a tenant, with optional categorization (`category_id` FK). Categories and services use soft deactivation (`is_active = false`) to protect historical transaction logs.
+4. **Customer Dossier & History**: Customers belong to a business tenant. Deleting a customer deletes appointments via `CASCADE`, but preserves `call_histories` records (`customer_id` set to `NULL`) for compliance and accounting.
+5. **Customer Phone Uniqueness**: Enforced per-tenant, allowing separate businesses to maintain identical customer phone numbers without conflict.
 
 ---
 

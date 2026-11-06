@@ -1,7 +1,7 @@
 """SQLAlchemy model for Customer entity."""
 
 from typing import TYPE_CHECKING
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.base import Base, TimestampMixin
 
@@ -26,6 +26,9 @@ class Customer(Base, TimestampMixin):
     customer_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     phone_number: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
 
     # Relationships
     business: Mapped["Business"] = relationship("Business", back_populates="customers")
