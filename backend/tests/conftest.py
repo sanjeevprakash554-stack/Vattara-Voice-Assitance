@@ -3,6 +3,9 @@
 Provides isolated test client and database session overrides.
 """
 
+import os
+os.environ["ENVIRONMENT"] = "test"
+
 from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
@@ -10,15 +13,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.deps import get_db_session
 from app.core.config import settings
+settings.ENVIRONMENT = "test"
+
+from app.api.deps import get_db_session
 from app.database.base import Base
 from app.database.connection import get_db
 import app.models  # Ensure all model tables are registered in Base.metadata
 from app.main import app
-
-# Ensure environment is set to test to prevent production DB calls in lifespan
-settings.ENVIRONMENT = "test"
 
 # Create in-memory SQLite engine for tests
 TEST_DATABASE_URL = "sqlite:///:memory:"

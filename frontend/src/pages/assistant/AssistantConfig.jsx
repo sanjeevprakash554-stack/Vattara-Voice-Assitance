@@ -35,13 +35,31 @@ const VOICES = [
   { id: 'shimmer', name: 'Shimmer', tone: 'Soothing & Gentle', sampleText: 'We care about your comfort. Your consultation is reserved.' },
 ];
 
+const LOCALIZED_GREETINGS = {
+  'en-US': (name) => `Hello! I am ${name}, your AI voice assistant at Vattara City Clinic. How may I assist your appointment today?`,
+  'en-IN': (name) => `Namaste! I am ${name}, your AI receptionist at Vattara City Clinic. How may I help you book a doctor appointment today?`,
+  'hi-IN': (name) => `नमस्ते! मैं ${name} हूँ, वत्तारा क्लिनिक का AI वॉइस असिस्टेंट। आज मैं आपकी क्या सहायता कर सकता हूँ?`,
+  'ta-IN': (name) => `வணக்கம்! நான் ${name}, வட்டாரா மருத்துவமனையின் AI குரல் உதவியாளர். இன்று உங்கள் முன்பதிவுக்கு நான் எவ்வாறு உதவ முடியும்?`,
+  'es-ES': (name) => `¡Hola! Soy ${name}, tu asistente de voz en la clínica Vattara. ¿Cómo puedo ayudarte hoy con tu cita médica?`,
+  'fr-FR': (name) => `Bonjour! Je suis ${name}, votre assistant vocal à la clinique Vattara. Comment puis-je vous aider aujourd'hui?`,
+};
+
+const VOICE_PROFILES = {
+  alloy: { pitch: 1.0, rate: 1.0, gender: 'neutral' },
+  echo: { pitch: 0.85, rate: 0.94, gender: 'male' },
+  fable: { pitch: 1.06, rate: 1.02, gender: 'neutral' },
+  onyx: { pitch: 0.74, rate: 0.88, gender: 'male' },
+  nova: { pitch: 1.22, rate: 1.08, gender: 'female' },
+  shimmer: { pitch: 1.08, rate: 0.88, gender: 'female' },
+};
+
 const LANGUAGES = [
   { code: 'en-US', name: 'English (United States)' },
   { code: 'en-IN', name: 'English (India)' },
-  { code: 'hi-IN', name: 'Hindi (India)' },
-  { code: 'ta-IN', name: 'Tamil (India)' },
-  { code: 'es-ES', name: 'Spanish' },
-  { code: 'fr-FR', name: 'French' },
+  { code: 'hi-IN', name: 'Hindi (India) - हिन्दी' },
+  { code: 'ta-IN', name: 'Tamil (India) - தமிழ்' },
+  { code: 'es-ES', name: 'Spanish - Español' },
+  { code: 'fr-FR', name: 'French - Français' },
 ];
 
 export default function AssistantConfig() {
@@ -133,22 +151,42 @@ export default function AssistantConfig() {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
         const voiceInfo = VOICES.find((v) => v.id === voiceId);
-        const utterance = new SpeechSynthesisUtterance(
-          `Hello! I am ${voiceInfo?.name || 'Vattara'}, your AI voice assistant. Thank you for calling Vattara Health Clinic. How may I assist your appointment today?`
+        const voiceName = voiceInfo?.name || 'Vattara';
+        
+        // Generate phrase according to configured spoken language dialect
+        const langCode = config?.language || 'en-US';
+        const phraseGenerator = LOCALIZED_GREETINGS[langCode] || LOCALIZED_GREETINGS['en-US'];
+        const sampleText = phraseGenerator(voiceName);
+
+        const utterance = new SpeechSynthesisUtterance(sampleText);
+        utterance.lang = langCode;
+
+        // Apply distinct neural speech profile
+        const profile = VOICE_PROFILES[voiceId] || { pitch: 1.0, rate: 1.0, gender: 'neutral' };
+        utterance.pitch = profile.pitch;
+        utterance.rate = profile.rate;
+
+        // Match available browser voices for this language and persona gender
+        const allVoices = window.speechSynthesis.getVoices();
+        const langPrefix = langCode.split('-')[0].toLowerCase();
+        const matchingVoices = allVoices.filter(
+          (v) => v.lang.toLowerCase().startsWith(langPrefix) || v.lang.toLowerCase().replace('_', '-') === langCode.toLowerCase()
         );
-        if (voiceId === 'orion') {
-          utterance.pitch = 0.85;
-          utterance.rate = 0.95;
-        } else if (voiceId === 'sol') {
-          utterance.pitch = 1.15;
-          utterance.rate = 1.05;
-        } else if (voiceId === 'zephyr') {
-          utterance.pitch = 0.95;
-          utterance.rate = 0.92;
-        } else {
-          utterance.pitch = 1.1;
-          utterance.rate = 1.0;
+
+        if (matchingVoices.length > 0) {
+          if (profile.gender === 'female') {
+            utterance.voice =
+              matchingVoices.find((v) => /female|woman|zira|samantha|victoria|karen/i.test(v.name)) ||
+              matchingVoices[0];
+          } else if (profile.gender === 'male') {
+            utterance.voice =
+              matchingVoices.find((v) => /male|man|david|guy|george|alex/i.test(v.name)) ||
+              matchingVoices[0];
+          } else {
+            utterance.voice = matchingVoices[0];
+          }
         }
+
         utterance.onend = () => setPlayingVoice(null);
         utterance.onerror = () => setPlayingVoice(null);
         window.speechSynthesis.speak(utterance);
@@ -286,7 +324,11 @@ export default function AssistantConfig() {
             </p>
           </div>
 
-          <VoiceOrb size="md" isSpeaking={!!playingVoice || config.is_active} />
+          <VoiceOrb
+            size="md"
+            isSpeaking={!!playingVoice || config.is_active}
+            isListening={!config.is_active}
+          />
 
           <div className="w-full">
             <WaveformVisualizer barCount={26} height={32} color="burnt" isPlaying={!!playingVoice || config.is_active} />
@@ -307,7 +349,7 @@ export default function AssistantConfig() {
               </button>
             </div>
             <p className="text-[11px] text-mutedgrey italic leading-relaxed">
-              "{VOICES.find((v) => v.id === config.voice)?.sampleText}"
+              "{(LOCALIZED_GREETINGS[config.language] || LOCALIZED_GREETINGS['en-US'])(VOICES.find((v) => v.id === config.voice)?.name || 'Vattara')}"
             </p>
           </div>
 
