@@ -46,6 +46,13 @@ def test_alembic_upgrade_and_downgrade(tmp_path: Path) -> None:
     assert "business_name" in columns
     assert "business_type" in columns
     assert "email" in columns
+    assert "is_active" in columns
+
+    # Verify column structures on users table
+    user_columns = {col["name"]: col for col in inspector.get_columns("users")}
+    assert "email" in user_columns
+    assert "password_hash" in user_columns
+    assert "is_active" in user_columns
 
     # Test DOWNGRADE to base
     command.downgrade(cfg, "base")

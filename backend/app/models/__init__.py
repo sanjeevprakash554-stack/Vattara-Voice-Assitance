@@ -1,6 +1,6 @@
 """SQLAlchemy ORM models package.
 
-Exports all entity models for business multi-tenancy, users, customers,
+Exports all entity models for business multi-tenancy, users, roles, customers,
 appointments, call histories, and reminders.
 """
 
@@ -10,7 +10,7 @@ from app.models.business import Business
 from app.models.call_history import CallHistory
 from app.models.customer import Customer
 from app.models.reminder import Reminder
-from app.models.user import User
+from app.models.user import User, UserRole
 
 __all__ = [
     "Appointment",
@@ -20,4 +20,5 @@ __all__ = [
     "Customer",
     "Reminder",
     "User",
+    "UserRole",
 ]
