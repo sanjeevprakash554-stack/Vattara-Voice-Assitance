@@ -58,7 +58,10 @@ def ping_database(db: Session) -> bool:
         db: Active SQLAlchemy session.
 
     Returns:
-        bool: True if connection query succeeded, False otherwise.
+        bool: True if connection query succeeded.
+
+    Raises:
+        Exception: If connectivity query fails.
     """
     try:
         result = db.execute(text("SELECT 1"))
@@ -66,3 +69,19 @@ def ping_database(db: Session) -> bool:
     except Exception as exc:
         logger.error("Database ping failed: %s", exc)
         raise
+
+
+def check_database_connection() -> tuple[bool, str]:
+    """Test raw engine connectivity without requiring an active request scope.
+
+    Returns:
+        tuple[bool, str]: (is_healthy, status_message)
+    """
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True, "Database connection successful."
+    except Exception as exc:
+        msg = f"Database connection test failed: {exc}"
+        logger.error(msg)
+        return False, msg

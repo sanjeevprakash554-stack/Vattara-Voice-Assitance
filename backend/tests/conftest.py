@@ -6,10 +6,11 @@ Provides isolated test client and database session overrides.
 from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import app.models  # Ensures all model metadata is registered
 from app.api.deps import get_db_session
 from app.database.base import Base
 from app.database.connection import get_db
@@ -23,6 +24,15 @@ test_engine = create_engine(
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
+
+
+# Enable SQLite foreign key constraints enforcement
+@event.listens_for(test_engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record) -> None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
 
 TestingSessionLocal = sessionmaker(
     autocommit=False,
@@ -50,7 +60,8 @@ def db_session() -> Generator[Session, None, None]:
     yield session
 
     session.close()
-    transaction.rollback()
+    if transaction.is_active:
+        transaction.rollback()
     connection.close()
 
 

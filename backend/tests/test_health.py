@@ -44,3 +44,20 @@ def test_database_health_endpoint_failure(client: TestClient) -> None:
         assert data["status"] == "unhealthy"
         assert data["database"] == "disconnected"
         assert "Simulated connection error" in data["error"]
+
+
+def test_check_database_connection_utility() -> None:
+    """Test the standalone check_database_connection helper function."""
+    from app.database.connection import check_database_connection
+
+    with patch("app.database.connection.engine.connect") as mock_connect:
+        # Success path
+        is_ok, msg = check_database_connection()
+        assert is_ok is True
+        assert "successful" in msg
+
+        # Failure path
+        mock_connect.side_effect = OperationalError("connection refused", params=None, orig=Exception("DB offline"))
+        is_ok, msg = check_database_connection()
+        assert is_ok is False
+        assert "failed" in msg

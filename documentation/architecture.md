@@ -62,7 +62,97 @@ The backend follows a clean, modular, layered architecture designed for strict s
 
 ---
 
-## 4. Multi-Tenant Data Isolation Strategy
+## 4. Database Schema & Entity-Relationship Model (Phase 2)
+
+```mermaid
+erDiagram
+    BUSINESSES ||--o{ USERS : "has (1:N)"
+    BUSINESSES ||--o{ CUSTOMERS : "serves (1:N)"
+    BUSINESSES ||--o{ APPOINTMENTS : "manages (1:N)"
+    BUSINESSES ||--o{ CALL_HISTORIES : "records (1:N)"
+    BUSINESSES ||--o{ REMINDERS : "schedules (1:N)"
+    CUSTOMERS ||--o{ APPOINTMENTS : "books (1:N)"
+    CUSTOMERS ||--o{ CALL_HISTORIES : "participates (1:N)"
+    APPOINTMENTS ||--o{ REMINDERS : "triggers (1:N)"
+
+    BUSINESSES {
+        int id PK
+        string business_name
+        string business_type
+        string email UK
+        string phone_number
+        text address
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    USERS {
+        int id PK
+        int business_id FK
+        string full_name
+        string email UK
+        string password_hash
+        string role
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    CUSTOMERS {
+        int id PK
+        int business_id FK
+        string customer_name
+        string phone_number
+        string email
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    APPOINTMENTS {
+        int id PK
+        int business_id FK
+        int customer_id FK
+        date appointment_date
+        time appointment_time
+        string service_name
+        string status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    CALL_HISTORIES {
+        int id PK
+        int business_id FK
+        int customer_id FK
+        string phone_number
+        string call_type
+        string call_status
+        int call_duration
+        string recording_url
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    REMINDERS {
+        int id PK
+        int business_id FK
+        int appointment_id FK
+        timestamp reminder_datetime
+        string reminder_type
+        string status
+        timestamp created_at
+        timestamp updated_at
+    }
+```
+
+### Relationship & Integrity Rules:
+1. **Multi-Tenant Ownership**: `businesses` is the root aggregate entity. Deleting a business initiates a `CASCADE` delete removing all associated users, customers, appointments, reminders, and call histories.
+2. **Customer Appointments**: Deleting a customer deletes their appointments via `CASCADE`.
+3. **Audit Trail Preservation**: Deleting a customer sets `call_histories.customer_id` to `NULL` (`ondelete="SET NULL"`), ensuring inbound telephony logs, recordings, and duration metrics remain preserved for business accounting and analytics.
+4. **Appointment Reminders**: Deleting an appointment cascades to delete its linked pending/sent reminders (`CASCADE`).
+
+---
+
+## 5. Multi-Tenant Data Isolation Strategy
 
 Each business tenant registered on the platform will be uniquely identified by a `tenant_id` (UUID). Future models will incorporate a composite tenant scoping:
 

@@ -210,7 +210,30 @@ CREATE DATABASE ai_voice_assistant;
 
 ---
 
-### Step 6: How to Run the FastAPI Server
+### Step 6: Apply Database Migrations (Alembic)
+
+With your virtual environment activated and database credentials set in `.env`:
+
+```bash
+# Navigate to backend directory
+cd backend
+
+# Apply all migrations to the latest revision (head)
+alembic upgrade head
+
+# Rollback one migration (if needed)
+alembic downgrade -1
+
+# Rollback all migrations to base (if needed)
+alembic downgrade base
+
+# View migration history
+alembic history --verbose
+```
+
+---
+
+### Step 7: How to Run the FastAPI Server
 
 With your virtual environment activated:
 
@@ -256,12 +279,25 @@ Run the complete test suite with pytest:
 # From the project root:
 pytest
 
-# Or inside the backend/ directory:
+# Or inside the backend/ directory with detailed verbosity:
 cd backend
 pytest -v
 ```
 
-All 6 test cases (root endpoint, OpenAPI schema generation, Swagger accessibility, backend health status, database health success, and simulated database connection failure) will execute with mock isolation and in-memory test databases.
+All 17 automated tests will execute with mock isolation and in-memory test databases:
+- **Root & Swagger Documentation** (2 tests)
+- **Health Checks & Database Ping Diagnostics** (4 tests)
+- **Alembic Migration Forward & Rollback Life Cycle** (1 test)
+- **SQLAlchemy Models & Multi-Tenant Relationships** (9 tests)
+  - Business creation and audit timestamps
+  - Business-User relationship and bcrypt password encryption
+  - Business-Customer relationship
+  - Customer-Appointment-Business relationships
+  - CallHistory logging and customer link preservation
+  - Appointment-Reminder relationship
+  - Full Business cascade delete integrity
+  - Customer delete `SET NULL` on CallHistory
+  - Unique email constraints enforcement
 
 ---
 

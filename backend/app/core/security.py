@@ -10,6 +10,7 @@ Full authentication handlers will be connected in subsequent phases.
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import bcrypt
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -46,17 +47,22 @@ def create_access_token(
         claims.update(extra_claims)
 
     logger.debug("Token claims prepared for subject %s (auth module pending)", subject)
-    # Placeholder token string; cryptographic signing will be active in the auth phase
     return f"mock_jwt_token_for_{subject}"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify that a plain-text password matches a hashed password."""
-    # Placeholder: Will use passlib/bcrypt or argon2 in auth implementation
-    return plain_password == hashed_password
+    """Verify that a plain-text password matches a hashed password using bcrypt."""
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
+    except Exception as exc:
+        logger.error("Password verification error: %s", exc)
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    """Generate a secure cryptographic hash for user passwords."""
-    # Placeholder: Will use bcrypt/argon2 hashing in auth implementation
-    return f"hashed_{password}"
+    """Generate a secure cryptographic bcrypt hash for passwords."""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
