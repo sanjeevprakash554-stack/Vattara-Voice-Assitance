@@ -1,27 +1,31 @@
 """Central API Router for v1 endpoints.
 
-Aggregates all functional domain routes under the /api/v1 prefix with clean Swagger categorization.
+All functional domain routes (auth, dashboard, assistant, calls, appointments,
+customers, reminders, reports) are aggregated here under the /api/v1 prefix.
 """
 
 from fastapi import APIRouter
-from app.api.routes import admin, auth, business, customers, health, users
+from app.api.routes import (
+    appointments,
+    assistant,
+    auth,
+    calls,
+    customers,
+    dashboard,
+    health,
+    reminders,
+    reports,
+)
 
 api_router = APIRouter()
 
-# 1. Authentication & Profile Routes
-api_router.include_router(auth.router, prefix="/auth")
-
-# 2. Business Profile, Working Hours, Categories & Services Routes
-api_router.include_router(business.router, prefix="/business")
-
-# 3. Customer Management & Customer Interaction History Routes
-api_router.include_router(customers.router, prefix="/customers")
-
-# 4. Staff & User Management Routes
-api_router.include_router(users.router, prefix="/users", tags=["Users"])
-
-# 5. Super Admin Platform Management Routes
-api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
-
-# 6. System Health Check Routes
+# Register domain routers
 api_router.include_router(health.router, prefix="/health", tags=["Health"])
+api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+api_router.include_router(assistant.router, prefix="/assistant", tags=["AI Assistant"])
+api_router.include_router(calls.router, prefix="/calls", tags=["Calls"])
+api_router.include_router(appointments.router, prefix="/appointments", tags=["Appointments"])
+api_router.include_router(customers.router, prefix="/customers", tags=["Customers"])
+api_router.include_router(reminders.router, prefix="/reminders", tags=["Reminders"])
+api_router.include_router(reports.router, prefix="/reports", tags=["Reports & Analytics"])

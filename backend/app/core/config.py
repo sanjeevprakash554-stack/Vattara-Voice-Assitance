@@ -10,6 +10,15 @@ from pydantic import AnyHttpUrl, BeforeValidator, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def parse_bool(v: Any) -> bool:
+    """Safely parse boolean values even if system environment sets non-standard values like 'release'."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in ("true", "1", "t", "yes", "y", "debug")
+    return bool(v)
+
+
 def parse_cors(v: Any) -> list[str]:
     """Parse CORS origins whether provided as a JSON list, comma-separated string, or Python list."""
     if isinstance(v, str) and not v.startswith("["):
@@ -27,7 +36,7 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    DEBUG: Annotated[bool, BeforeValidator(parse_bool)] = True
     LOG_LEVEL: str = "INFO"
 
     # CORS

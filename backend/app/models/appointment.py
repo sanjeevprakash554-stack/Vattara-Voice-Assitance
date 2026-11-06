@@ -1,51 +1,44 @@
-"""SQLAlchemy model for Appointment entity."""
+"""SQLAlchemy model for Appointments."""
 
-from datetime import date, time
-from typing import TYPE_CHECKING
-from sqlalchemy import Date, ForeignKey, Integer, String, Time
+import uuid
+from datetime import datetime
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.base import Base, TimestampMixin
 
-if TYPE_CHECKING:
-    from app.models.business import Business
-    from app.models.customer import Customer
-    from app.models.reminder import Reminder
-
 
 class Appointment(Base, TimestampMixin):
-    """Scheduled appointment, consultation, reservation, or service session."""
+    """Appointment entity booked for a Customer with a Business."""
 
     __tablename__ = "appointments"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
-    business_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("businesses.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    customer_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("customers.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    business_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    appointment_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    appointment_time: Mapped[time] = mapped_column(Time, nullable=False)
-    service_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="scheduled", index=True)
+    customer_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    service_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("services.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    appointment_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(30), default="upcoming", nullable=False, index=True
+    )  # upcoming, completed, cancelled, rescheduled
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(
+        String(30), default="ai_call", nullable=False
+    )  # ai_call, manual, web
 
     # Relationships
-    business: Mapped["Business"] = relationship("Business", back_populates="appointments")
-    customer: Mapped["Customer"] = relationship("Customer", back_populates="appointments")
-    reminders: Mapped[list["Reminder"]] = relationship(
-        "Reminder",
-        back_populates="appointment",
-        cascade="all, delete-orphan",
-    )
+    business = relationship("Business", back_populates="appointments")
+    customer = relationship("Customer", back_populates="appointments")
+    service = relationship("Service", back_populates="appointments")
+    reminders = relationship("Reminder", back_populates="appointment", cascade="all, delete-orphan")
 
-    def __repr__(self) -> str:
-        return (
-            f"<Appointment(id={self.id}, service='{self.service_name}', "
-            f"date={self.appointment_date}, status='{self.status}')>"
-        )

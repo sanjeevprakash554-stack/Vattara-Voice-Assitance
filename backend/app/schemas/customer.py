@@ -1,80 +1,48 @@
-"""Pydantic schemas for Customer management and interaction history."""
+"""Pydantic schemas for Customers."""
 
-from datetime import date, datetime, time
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
-
-
-class CustomerCreateRequest(BaseModel):
-    """Payload to create a new customer record."""
-
-    customer_name: str = Field(..., min_length=1, max_length=255, description="Full customer name")
-    phone_number: str = Field(..., min_length=5, max_length=50, description="Phone number used for caller matching")
-    email: EmailStr | None = Field(default=None, description="Optional email address")
-    address: str | None = Field(default=None, description="Physical address")
-    notes: str | None = Field(default=None, description="Free-form customer background notes")
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class CustomerUpdateRequest(BaseModel):
+class CustomerBase(BaseModel):
+    """Base schema for Customer attributes."""
+
+    name: str = Field(..., min_length=2, max_length=200)
+    phone: str = Field(..., min_length=7, max_length=50)
+    email: str | None = None
+    notes: str | None = None
+
+
+class CustomerCreate(CustomerBase):
+    """Payload to create a new customer."""
+
+    pass
+
+
+class CustomerUpdate(BaseModel):
     """Payload to update an existing customer."""
 
-    customer_name: str | None = Field(default=None, min_length=1, max_length=255)
-    phone_number: str | None = Field(default=None, min_length=5, max_length=50)
-    email: EmailStr | None = None
-    address: str | None = None
-    notes: str | None = None
-    is_active: bool | None = None
-
-
-class CustomerResponse(BaseModel):
-    """Public safe representation of a Customer entity."""
-
-    id: int
-    business_id: int
-    customer_name: str
-    phone_number: str
+    name: str | None = None
+    phone: str | None = None
     email: str | None = None
-    address: str | None = None
     notes: str | None = None
-    is_active: bool
+
+
+class CustomerResponse(CustomerBase):
+    """Response schema for a customer record."""
+
+    id: str
+    business_id: str
+    total_calls: int = 0
+    total_appointments: int = 0
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class CustomerAppointmentHistoryItem(BaseModel):
-    """Historical appointment record summary for a customer."""
+class CustomerDetailResponse(CustomerResponse):
+    """Customer with recent call and appointment history."""
 
-    id: int
-    service_name: str
-    appointment_date: date
-    appointment_time: time
-    status: str
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class CustomerCallHistoryItem(BaseModel):
-    """Historical telephony / voice receptionist interaction record for a customer."""
-
-    id: int
-    phone_number: str
-    call_type: str
-    call_status: str
-    call_duration: int
-    recording_url: str | None = None
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class CustomerHistoryResponse(BaseModel):
-    """Comprehensive historical dossier for a customer."""
-
-    customer: CustomerResponse
-    appointments: list[CustomerAppointmentHistoryItem]
-    call_history: list[CustomerCallHistoryItem]
-    total_calls: int
-    total_appointments: int
-    last_interaction_date: datetime | None = None
+    calls: list[dict] = []
+    appointments: list[dict] = []

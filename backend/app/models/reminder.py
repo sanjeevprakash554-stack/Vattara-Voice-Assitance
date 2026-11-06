@@ -1,44 +1,43 @@
-"""SQLAlchemy model for Reminder entity."""
+"""SQLAlchemy model for Reminders."""
 
+import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.base import Base, TimestampMixin
 
-if TYPE_CHECKING:
-    from app.models.appointment import Appointment
-    from app.models.business import Business
-
 
 class Reminder(Base, TimestampMixin):
-    """Notification reminder scheduled for an upcoming appointment."""
+    """Notification or reminder dispatched to customers."""
 
     __tablename__ = "reminders"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
-    business_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("businesses.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    appointment_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("appointments.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    business_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    reminder_datetime: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
-    reminder_type: Mapped[str] = mapped_column(String(50), nullable=False, default="sms", index=True)
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", index=True)
+    appointment_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("appointments.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    customer_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    reminder_type: Mapped[str] = mapped_column(
+        String(30), default="sms", nullable=False
+    )  # sms, voice, email, whatsapp
+    scheduled_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(30), default="pending", nullable=False, index=True
+    )  # pending, sent, failed, cancelled
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    business: Mapped["Business"] = relationship("Business", back_populates="reminders")
-    appointment: Mapped["Appointment"] = relationship("Appointment", back_populates="reminders")
+    business = relationship("Business", back_populates="reminders")
+    appointment = relationship("Appointment", back_populates="reminders")
+    customer = relationship("Customer", back_populates="reminders")
 
-    def __repr__(self) -> str:
-        return (
-            f"<Reminder(id={self.id}, appointment_id={self.appointment_id}, "
-            f"type='{self.reminder_type}', status='{self.status}')>"
-        )

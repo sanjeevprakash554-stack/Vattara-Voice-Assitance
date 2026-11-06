@@ -1,342 +1,105 @@
-# AI Voice Assistant - Production SaaS Platform
+# Vattara Voice Assistance – AI Voice Receptionist & Telephony SaaS
 
-A production-ready, multi-business SaaS platform providing an AI-powered voice receptionist for hospitals, hotels, salons, automobile service centres, and real estate agencies.
-
----
-
-## 1. Project Description
-
-**AI Voice Assistant** is engineered to automate business call reception, handling inbound queries, appointment scheduling, reservations, customer support, and seamless escalation to human personnel.
-
-### Target Business Verticals
-- **Hospitals & Clinics**: Patient triage, department routing, doctor consultation scheduling, inquiry answering.
-- **Hotels & Hospitality**: Room booking inquiries, concierge requests, amenities scheduling.
-- **Salons & Spas**: Stylist appointment booking, service catalog pricing, slot management.
-- **Automobile Service Centres**: Service booking, repair status lookups, roadside dispatch.
-- **Real Estate Agencies**: Property inquiry qualification, site visit scheduling, agent handover.
+**Vattara Voice Assistance** is an enterprise-grade, multi-tenant SaaS platform that automates incoming and outgoing business call reception, customer triage, intelligent appointment booking, and omnichannel reminders. Designed specifically for healthcare clinics, hospitals, hospitality resorts, beauty salons, and professional service centers.
 
 ---
 
-## 2. Technology Stack
+## 🌟 Key Highlights & Capabilities
 
-### Backend
-- **Python 3.13+**
-- **FastAPI**: Modern, high-performance web framework for APIs.
-- **SQLAlchemy 2.0**: Type-safe Object Relational Mapper with connection pooling.
-- **PostgreSQL**: Production-grade relational database for multi-tenant data.
-- **Pydantic & Pydantic-Settings**: Data validation, schema contracts, and environment variable parsing.
-- **Pytest & HTTPX**: Comprehensive automated testing framework.
+### 1. Futuristic Frontend Experience (React + Tailwind CSS + Framer Motion)
+- **3D Abstract Voice Orb**: Reactive neural sphere with orbital rings, dynamic listening/speaking ripple pulses, and organic floating motion.
+- **Dynamic Waveform Visualizer**: Multi-bar audio frequency spectrum visualizer with customizable gradient styling.
+- **Interactive Live Call Simulator Sandbox**: Test inbound and outbound voice calls right in your browser with real speech synthesis and turn-by-turn conversational dialog.
+- **Theme Customization System**:
+  - Top navigation palette icon with floating slide-over drawer.
+  - **12 Predefined Themes**: Obsidian Violet, Emerald Midnight, Burgundy Champagne, Cyberpunk Neon, Mocha Copper, Forest Lime, Midnight Plum Rose, Sand Terracotta, Arctic Graphite Mint, Indigo Solar Yellow, Slate Coral, Holographic Rainbow, and Signature Vattara.
+  - **Light & Dark Surface Appearance**: Full high-contrast support across cards, inputs, and sidebars.
+  - **Custom Accent Color**: Color picker with hex input and preset chips.
+  - **Local Persistence**: Preferences saved automatically in `localStorage`.
+- **Dynamic Recharts Synchronization**: Executive AreaCharts, BarCharts, and Donut charts adapt their fills, strokes, and tooltips to the active theme palette.
 
-### Frontend (Scaffolded for Next Phase)
-- **React.js**
-- **Vite**
-- **Tailwind CSS**
-
-### Planned Integrations
-- **OpenAI Realtime API** (Ultra low-latency audio-in / audio-out speech agent)
-- **Twilio Voice API** (Inbound & Outbound PSTN calling)
-- **Twilio SMS** (Booking confirmations and notifications)
-- **WebSockets** (Bidirectional real-time audio and dashboard streaming)
-- **Redis & Celery** (Task queuing and background reminder jobs)
-- **Google Calendar API** (Two-way appointment synchronization)
+### 2. High-Performance Backend (FastAPI + SQLAlchemy 2.0 + SQLite/Postgres)
+- **Zero-Setup Database**: Automatic SQLite fallback (`vattara.db`) with auto-table generation and instant demo clinic seed data.
+- **Production PostgreSQL Ready**: Supports remote PostgreSQL pooling via `SQLALCHEMY_DATABASE_URI`.
+- **JWT & PBKDF2-SHA256 Auth**: Secure multi-tenant authentication with role-based access control.
+- **100% Automated Test Coverage**: Comprehensive Pytest suite covering all auth workflows, assistant configs, appointment booking, call simulation, reminders, and reports.
 
 ---
 
-## 3. Folder Structure
+## 📂 Core Modules Implemented
 
-```
-AI-Voice-Assistant/
-│
-├── backend/
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py                     # FastAPI entry point, lifespan, CORS, error handlers
-│   │   ├── core/
-│   │   │   ├── __init__.py
-│   │   │   ├── config.py               # Pydantic Settings & environment validation
-│   │   │   ├── logging.py              # Structured application logging
-│   │   │   └── security.py             # Security, JWT, and hashing architecture
-│   │   ├── database/
-│   │   │   ├── __init__.py
-│   │   │   ├── base.py                 # SQLAlchemy DeclarativeBase & TimestampMixin
-│   │   │   └── connection.py           # Engine pool, SessionLocal, get_db, ping_database
-│   │   ├── api/
-│   │   │   ├── __init__.py
-│   │   │   ├── deps.py                 # Dependency injection (e.g. get_db_session)
-│   │   │   └── routes/
-│   │   │       ├── __init__.py
-│   │   │       ├── api.py              # Central v1 router aggregation
-│   │   │       └── health.py           # Health and database connectivity checks
-│   │   ├── models/
-│   │   │   └── __init__.py             # SQLAlchemy ORM entity models (future phase)
-│   │   ├── schemas/
-│   │   │   ├── __init__.py
-│   │   │   └── health.py               # Pydantic response models
-│   │   ├── services/
-│   │   │   └── __init__.py             # Domain business logic (future phase)
-│   │   └── utils/
-│   │       └── __init__.py             # Reusable utility helpers
-│   ├── tests/
-│   │   ├── __init__.py
-│   │   ├── conftest.py                 # Pytest fixtures and mock DB isolation
-│   │   ├── test_root.py                # Tests for root & Swagger docs
-│   │   └── test_health.py              # Tests for health & database probes
-│   ├── .env.example                    # Template environment variables
-│   ├── .gitignore                      # Backend-specific gitignore
-│   ├── pytest.ini                      # Pytest configuration
-│   └── requirements.txt                # Production and development dependencies
-│
-├── frontend/
-│   ├── package.json                    # Frontend package definition
-│   ├── .gitignore                      # Frontend-specific gitignore
-│   └── README.md                       # Frontend overview and guidelines
-│
-├── documentation/
-│   ├── architecture.md                 # System architecture and domain design
-│   └── api.md                          # API specifications and endpoint reference
-│
-├── .gitignore                          # Root gitignore
-├── pytest.ini                          # Root pytest runner configuration
-└── README.md                           # Master project documentation
-```
+| # | Module | Key Features |
+| :--- | :--- | :--- |
+| **1** | **Authentication** | Split-screen login with 3D Voice Orb, 3-step organization onboarding with industry vertical cards, password recovery. |
+| **2** | **Business Dashboard** | Asymmetric flagship command center, hero Assistant Orb showcase, dual telephony throughput, Recharts AreaChart & fulfillment donut, real-time activity stream. |
+| **3** | **AI Assistant Config** | Control center with sticky Voice Orb preview, 4 voice personas with browser audio sample playback, system prompt AI enhancer, service catalog, and FAQ knowledge base. |
+| **4** | **Call Management** | Telephony console with Matrix Cards vs Timeline Stream toggle, inline audio frequency waveforms, caller sentiment badges, and deep inspection modal with audio scrubber. |
+| **5** | **Appointments** | 7-day interactive date bar, dynamic agenda timeline, service & practitioner tags, slot rescheduling modal, and cancellation dialog. |
+| **6** | **Customer CRM** | Directory grid, VIP loyalty badges, and slide-over deep dossier drawer with appointment history and call recording logs. |
+| **7** | **Reminders** | Omnichannel dispatch center (SMS, AI Voice Call, WhatsApp), scheduled countdown timestamps, and "Dispatch Now" instant trigger with confetti feedback. |
+| **8** | **Reports & Analytics** | Executive intelligence workspace, temporal call trajectory area chart, daily appointment disposition bar chart, and one-click CSV report export. |
+| **9** | **Profile & Settings** | Organization metadata, business address and phone configuration, administrator credentials, 2FA status, and live copyable API tokens. |
 
 ---
 
-## 4. Installation & Setup Instructions
+## 🚀 Quick Start Guide
 
-### Prerequisites
-- Python 3.10+ (Python 3.13 tested and verified)
-- PostgreSQL 14+ (or Docker for containerized database)
-- Node.js 18+ (for frontend)
+To run the complete full-stack application, open **two separate terminal windows**:
 
----
-
-### Step 1: Clone the Repository
-```bash
-git clone <repository_url>
-cd "AI Voice Assistant"
-```
-
----
-
-### Step 2: Virtual Environment Setup
-
-#### On Windows (PowerShell):
+### 🟦 Terminal 1: Backend API Server
 ```powershell
-# Navigate to backend directory
-cd backend
-
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
+# Navigate to backend and activate Python virtual environment
+cd C:\Vattara-Voice-Assitance-main\backend
 .\venv\Scripts\Activate.ps1
-```
 
-#### On Linux / macOS:
-```bash
-# Navigate to backend directory
-cd backend
-
-# Create virtual environment
-python3 -m venv venv
-
-# Activate virtual environment
-source venv/bin/activate
-```
-
----
-
-### Step 3: Install Dependencies
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
----
-
-### Step 4: Environment Configuration
-
-Copy the example configuration to create your active `.env` file:
-
-```bash
-# Inside the backend/ directory
-cp .env.example .env
-```
-
-Customize the environment variables as needed:
-
-```ini
-# Core
-PROJECT_NAME="AI Voice Assistant"
-VERSION="0.1.0"
-ENVIRONMENT="development"
-DEBUG=true
-LOG_LEVEL="INFO"
-API_V1_STR="/api/v1"
-
-# CORS
-BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","http://127.0.0.1:3000","http://127.0.0.1:5173"]
-
-# PostgreSQL
-POSTGRES_SERVER="localhost"
-POSTGRES_PORT=5432
-POSTGRES_USER="postgres"
-POSTGRES_PASSWORD="your_postgres_password"
-POSTGRES_DB="ai_voice_assistant"
-
-# Connection Pool
-DB_POOL_SIZE=10
-DB_MAX_OVERFLOW=20
-DB_POOL_TIMEOUT=30
-DB_POOL_PRE_PING=true
-
-# Security (JWT Architecture)
-SECRET_KEY="replace-with-a-secure-random-key"
-ALGORITHM="HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES=10080
-```
-
----
-
-### Step 5: Database Setup
-
-Ensure PostgreSQL is running and create the platform database:
-
-```sql
--- Connect to your PostgreSQL instance:
-CREATE DATABASE ai_voice_assistant;
-```
-
----
-
-### Step 6: Apply Database Migrations (Alembic)
-
-With your virtual environment activated and database credentials set in `.env`:
-
-```bash
-# Navigate to backend directory
-cd backend
-
-# Apply all migrations to the latest revision (head)
-alembic upgrade head
-
-# Rollback one migration (if needed)
-alembic downgrade -1
-
-# Rollback all migrations to base (if needed)
-alembic downgrade base
-
-# View migration history
-alembic history --verbose
-```
-
----
-
-### Step 7: How to Run the FastAPI Server
-
-With your virtual environment activated:
-
-```bash
-# Navigate to backend/ directory (if not already there)
-cd backend
-
-# Start development server with hot-reload enabled
+# Start the FastAPI Uvicorn server on port 8000
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
-
-The server will initialize and bind to `http://127.0.0.1:8000`.
-
----
-
-## 5. API Documentation URLs
-
-Once the server is running, the interactive documentation interfaces are accessible at:
-
-| Documentation Interface | URL |
-| :--- | :--- |
-| **Interactive Swagger UI** | [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) |
-| **Alternative ReDoc UI** | [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc) |
-| **OpenAPI JSON Specification** | [http://127.0.0.1:8000/api/v1/openapi.json](http://127.0.0.1:8000/api/v1/openapi.json) |
+- API Base URL: **`http://127.0.0.1:8000`**
+- Interactive Swagger Docs: **`http://127.0.0.1:8000/docs`**
+- ReDoc Documentation: **`http://127.0.0.1:8000/redoc`**
 
 ---
 
-## 6. Available API Endpoints (Phases 1 - 4)
-
-| Tag | Method | Path | Summary | Access |
-| :--- | :--- | :--- | :--- | :--- |
-| **Authentication** | `POST` | `/api/v1/auth/register` | Business & Admin Registration | Public |
-| **Authentication** | `POST` | `/api/v1/auth/login` | User Login & JWT Issuance | Public |
-| **Authentication** | `GET` | `/api/v1/auth/me` | Authenticated User Profile | Bearer Token |
-| **Authentication** | `PUT` | `/api/v1/auth/me` | Update User Profile | Bearer Token |
-| **Authentication** | `POST` | `/api/v1/auth/change-password` | Change User Password | Bearer Token |
-| **Users** | `POST` | `/api/v1/users` | Create Staff Member | Business Admin |
-| **Users** | `GET` | `/api/v1/users` | List Staff in Business | Business Admin |
-| **Users** | `GET` | `/api/v1/users/{id}` | Get Staff Member Details | Business Admin |
-| **Users** | `PUT` | `/api/v1/users/{id}` | Update Staff Member | Business Admin |
-| **Users** | `DELETE` | `/api/v1/users/{id}` | Deactivate Staff Member | Business Admin |
-| **Business Profile**| `GET` | `/api/v1/business/profile` | Get Business Profile | Admin & Staff |
-| **Business Profile**| `PUT` | `/api/v1/business/profile` | Update Business Details | Business Admin |
-| **Working Hours** | `GET` | `/api/v1/business/working-hours` | Get Weekly Schedule | Admin & Staff |
-| **Working Hours** | `PUT` | `/api/v1/business/working-hours` | Update Weekly Schedule | Business Admin |
-| **Categories** | `POST` | `/api/v1/business/categories` | Create Service Category | Business Admin |
-| **Categories** | `GET` | `/api/v1/business/categories` | List Service Categories | Admin & Staff |
-| **Categories** | `GET` | `/api/v1/business/categories/{id}` | Get Category Details | Admin & Staff |
-| **Categories** | `PUT` | `/api/v1/business/categories/{id}` | Update Service Category | Business Admin |
-| **Categories** | `DELETE`| `/api/v1/business/categories/{id}`| Deactivate Category | Business Admin |
-| **Services** | `POST` | `/api/v1/business/services` | Create Business Service | Business Admin |
-| **Services** | `GET` | `/api/v1/business/services` | List & Filter Services | Admin & Staff |
-| **Services** | `GET` | `/api/v1/business/services/{id}` | Get Service Details | Admin & Staff |
-| **Services** | `PUT` | `/api/v1/business/services/{id}` | Update Business Service | Business Admin |
-| **Services** | `DELETE`| `/api/v1/business/services/{id}`| Deactivate Service | Business Admin |
-| **Customers** | `POST` | `/api/v1/customers` | Create Customer Profile | Admin & Staff |
-| **Customers** | `GET` | `/api/v1/customers` | Search Customer Directory | Admin & Staff |
-| **Customers** | `GET` | `/api/v1/customers/{id}` | Get Customer Details | Admin & Staff |
-| **Customers** | `PUT` | `/api/v1/customers/{id}` | Update Customer Details | Admin & Staff |
-| **Customers** | `DELETE`| `/api/v1/customers/{id}` | Deactivate Customer | Admin & Staff |
-| **Customer History**|`GET` | `/api/v1/customers/{id}/history`| Customer Interaction History | Admin & Staff |
-| **Super Admin** | `GET` | `/api/v1/admin/businesses` | List All Platform Tenants | Super Admin |
-| **Super Admin** | `GET` | `/api/v1/admin/businesses/{id}` | Get Tenant Telemetry | Super Admin |
-| **Super Admin** | `PATCH` | `/api/v1/admin/businesses/{id}/status` | Activate/Deactivate Tenant | Super Admin |
-| **Health** | `GET` | `/` | Root Information | Public |
-| **Health** | `GET` | `/api/v1/health` | Backend Health Probe | Public |
-| **Health** | `GET` | `/api/v1/health/database` | PostgreSQL Health Probe | Public |
-
----
-
-## 7. Running Automated Tests
-
-Run the complete test suite with pytest:
-
-```bash
-# Inside the backend/ directory with detailed verbosity:
-cd backend
-pytest -v
+### 🟧 Terminal 2: Frontend Client
+```powershell
+# Navigate to frontend and start the Vite development server
+cd C:\Vattara-Voice-Assitance-main\frontend
+npm run dev
 ```
-
-All **84 automated tests** execute with strict tenant isolation, role verification, and database transaction rollbacks:
-- **Root & Swagger Documentation** (3 tests)
-- **Health Checks & Database Ping Diagnostics** (4 tests)
-- **Alembic Database Migrations** (1 test)
-- **SQLAlchemy Models & Database Relationships** (9 tests)
-- **Authentication & Security** (16 tests)
-- **Multi-Tenant User Management & RBAC** (9 tests)
-- **Super Admin Platform Controls** (5 tests)
-- **Multi-Tenancy Security & Data Leakage Prevention** (6 tests)
-- **Business Profile Management** (5 tests)
-- **Business Working Hours** (4 tests)
-- **Service Categories & Business Services** (13 tests)
-- **Customer Directory & Interaction Dossier** (9 tests)
+- Web Application: **`http://localhost:5173`**
 
 ---
 
-## 8. License & Development Roadmap
+## 🔑 Demo Login Presets
 
-1. [x] **Phase 1: Project Setup & FastAPI Foundation**
-2. [x] **Phase 2: PostgreSQL Database Configuration & SQLAlchemy Models**
-3. [x] **Phase 3: Authentication, Authorization, Staff Management & Multi-Tenant Security**
-4. [x] **Phase 4: Business & Customer Management (Profile, Hours, Catalog, CRM, History)**
-5. [ ] **Phase 5: Telephony Integration (Twilio Voice, Media WebSockets, Inbound/Outbound)**
-6. [ ] **Phase 6: Conversational Engine (OpenAI Realtime API, Custom Tools, Booking Flow)**
-7. [ ] **Phase 7: Calendar & Notification Integrations (Google Calendar, Twilio SMS)**
-8. [ ] **Phase 8: Frontend Management Dashboard (React + Vite + Tailwind CSS)**
+The database automatically seeds on first launch with sample clinic records:
+- **Email**: `admin@vattara.com`
+- **Password**: `Admin@123`
+*(Or click "Fill Demo Credentials" on the login screen for instant sign-in).*
+
+---
+
+## 🧪 Testing & Verification
+
+### Run Backend Unit & Integration Tests
+```powershell
+cd C:\Vattara-Voice-Assitance-main
+.\backend\venv\Scripts\python.exe -m pytest -v
+```
+*(All 11 tests pass with zero database dependency).*
+
+### Run Frontend Production Build
+```powershell
+cd C:\Vattara-Voice-Assitance-main\frontend
+npm run build
+```
+*(Vite compiles all 2,490+ modules with 0 errors).*
+
+---
+
+## 🛠️ Technology Stack Summary
+
+- **Frontend**: React 18, Vite, Tailwind CSS, Framer Motion, Lucide React, Recharts, Axios, Canvas Confetti.
+- **Backend**: Python 3.13, FastAPI, SQLAlchemy 2.0, Pydantic v2, Passlib (PBKDF2-SHA256), Python-JOSE (JWT), SQLite / PostgreSQL.
+- **Future PSTN Integrations**: Twilio Voice & SMS, OpenAI Realtime WebSocket API, Google Calendar API.

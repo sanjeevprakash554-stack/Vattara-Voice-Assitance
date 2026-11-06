@@ -1,4 +1,4 @@
-# AI Voice Assistant - API Documentation
+# Vattara Voice Assistance - Complete API Documentation
 
 ## Base URLs
 
@@ -9,293 +9,106 @@
 
 ---
 
-## 1. Authentication Endpoints (`/api/v1/auth`)
+## 1. Authentication (`/api/v1/auth`)
 
-### 1.1 Business Registration
-- **Endpoint**: `POST /api/v1/auth/register`
-- **Tags**: `Authentication`
-- **Description**: Atomic registration creating a new tenant organization and its initial `BUSINESS_ADMIN` user.
-- **Request Body**:
-```json
-{
-  "business_name": "Metro City Hospital",
-  "business_type": "hospital",
-  "business_email": "contact@metrohospital.com",
-  "business_phone_number": "+1-555-0199",
-  "business_address": "100 Healthcare Blvd, Metro City",
-  "admin_full_name": "Dr. Sarah Jenkins",
-  "admin_email": "sarah@metrohospital.com",
-  "admin_password": "StrongPassword123!",
-  "confirm_password": "StrongPassword123!"
-}
-```
-- **Response**: `201 Created`
-```json
-{
-  "business": {
-    "id": 1,
-    "business_name": "Metro City Hospital",
-    "business_type": "hospital",
-    "email": "contact@metrohospital.com",
-    "phone_number": "+1-555-0199",
-    "address": "100 Healthcare Blvd, Metro City",
-    "is_active": true,
-    "created_at": "2026-11-06T13:00:00Z"
-  },
-  "admin_user": {
-    "id": 1,
-    "business_id": 1,
-    "full_name": "Dr. Sarah Jenkins",
-    "email": "sarah@metrohospital.com",
-    "role": "BUSINESS_ADMIN",
-    "is_active": true,
-    "created_at": "2026-11-06T13:00:00Z"
-  },
-  "message": "Business and administrator account registered successfully."
-}
-```
+| Method | Path | Summary | Description |
+| :--- | :--- | :--- | :--- |
+| **POST** | `/api/v1/auth/register` | Business Registration | Creates new organization, admin user, and initializes AI assistant config. Returns JWT. |
+| **POST** | `/api/v1/auth/login` | User Login | Authenticates administrator with email & password, returns JWT token. |
+| **GET** | `/api/v1/auth/me` | Current Profile | Retrieves active user profile and organization details. |
+| **PUT** | `/api/v1/auth/profile` | Update Profile | Updates name, phone, address, or changes password. |
+| **POST** | `/api/v1/auth/forgot-password` | Forgot Password | Dispatches password reset code simulation. |
+| **POST** | `/api/v1/auth/reset-password` | Reset Password | Updates forgotten password with valid reset code. |
 
 ---
 
-### 1.2 User Login (OAuth2 Compatible)
-- **Endpoint**: `POST /api/v1/auth/login`
-- **Tags**: `Authentication`
-- **Description**: Authenticate via JSON or OAuth2 form-data and receive a cryptographically signed JWT bearer token.
-- **Request Body (JSON)**:
-```json
-{
-  "email": "sarah@metrohospital.com",
-  "password": "StrongPassword123!"
-}
-```
-*(Also accepts form-data with `username` and `password` for Swagger UI "Authorize" button).*
-- **Response**: `200 OK`
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "bearer",
-  "expires_in": 604800,
-  "user": {
-    "id": 1,
-    "business_id": 1,
-    "full_name": "Dr. Sarah Jenkins",
-    "email": "sarah@metrohospital.com",
-    "role": "BUSINESS_ADMIN",
-    "is_active": true,
-    "created_at": "2026-11-06T13:00:00Z",
-    "business_name": "Metro City Hospital",
-    "business_type": "hospital"
-  }
-}
-```
+## 2. Business Dashboard (`/api/v1/dashboard`)
+
+| Method | Path | Summary | Description |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/v1/dashboard/stats` | Dashboard KPIs | Computes aggregate totals: incoming/outgoing calls, appointments, customers, successful, missed. |
+| **GET** | `/api/v1/dashboard/activities` | Activity Feed | Returns chronological feed of recent calls, appointments, and reminders. |
+| **GET** | `/api/v1/dashboard/analytics` | Telemetry Charts | Provides daily call trends, appointment status distribution, and call duration report. |
 
 ---
 
-### 1.3 Get Current User Profile
-- **Endpoint**: `GET /api/v1/auth/me`
-- **Security**: `Bearer <token>`
-- **Tags**: `Authentication`
-- **Response**: `200 OK`
-```json
-{
-  "id": 1,
-  "business_id": 1,
-  "full_name": "Dr. Sarah Jenkins",
-  "email": "sarah@metrohospital.com",
-  "role": "BUSINESS_ADMIN",
-  "is_active": true,
-  "created_at": "2026-11-06T13:00:00Z",
-  "business_name": "Metro City Hospital",
-  "business_type": "hospital"
-}
-```
+## 3. AI Assistant Configuration (`/api/v1/assistant`)
+
+| Method | Path | Summary | Description |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/v1/assistant` | Get Config | Retrieves current AI assistant name, language, voice, system prompt, and operating hours. |
+| **PUT** | `/api/v1/assistant` | Update Config | Updates assistant persona, speech tone, instructions, and working hours schedule. |
+| **POST** | `/api/v1/assistant/toggle` | Toggle Active State | Activates or deactivates the AI voice receptionist. |
+| **GET** | `/api/v1/assistant/services` | List Services | Returns list of services offered by the business with duration & price. |
+| **POST** | `/api/v1/assistant/services` | Add Service | Registers a new business service in the assistant catalog. |
+| **PUT** | `/api/v1/assistant/services/{id}` | Update Service | Updates service name, duration, or fee. |
+| **DELETE** | `/api/v1/assistant/services/{id}` | Delete Service | Removes a service from the catalog. |
+| **GET** | `/api/v1/assistant/faqs` | List FAQs | Returns knowledge base FAQs used for caller inquiry answering. |
+| **POST** | `/api/v1/assistant/faqs` | Add FAQ | Adds a new question and answer to the knowledge base. |
+| **PUT** | `/api/v1/assistant/faqs/{id}` | Update FAQ | Edits FAQ question, answer, or category. |
+| **DELETE** | `/api/v1/assistant/faqs/{id}` | Delete FAQ | Removes an FAQ from the knowledge base. |
 
 ---
 
-### 1.4 Update User Profile
-- **Endpoint**: `PUT /api/v1/auth/me`
-- **Security**: `Bearer <token>`
-- **Tags**: `Authentication`
-- **Request Body**:
-```json
-{
-  "full_name": "Dr. Sarah Jenkins, MD"
-}
-```
-*(Role and business_id cannot be modified via profile update).*
+## 4. Call Management (`/api/v1/calls`)
+
+| Method | Path | Summary | Description |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/v1/calls` | Call History | Filterable call history by type (incoming/outgoing), status (completed/missed), and search. |
+| **GET** | `/api/v1/calls/{id}` | Call Details | Returns full call details including recording URL, summary, and audio transcript. |
+| **POST** | `/api/v1/calls/simulate` | Simulate AI Call | Simulates an inbound or outbound call with realistic audio transcript and summary. |
+| **POST** | `/api/v1/calls` | Log Call | Directly logs a call event. |
 
 ---
 
-### 1.5 Change Password
-- **Endpoint**: `POST /api/v1/auth/change-password`
-- **Security**: `Bearer <token>`
-- **Tags**: `Authentication`
-- **Request Body**:
-```json
-{
-  "current_password": "StrongPassword123!",
-  "new_password": "NewStrongPassword456!",
-  "confirm_new_password": "NewStrongPassword456!"
-}
-```
-- **Response**: `200 OK`
-```json
-{
-  "message": "Password changed successfully."
-}
-```
+## 5. Appointment Management (`/api/v1/appointments`)
+
+| Method | Path | Summary | Description |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/v1/appointments` | List Appointments | Returns appointments with status filter (upcoming, completed, cancelled, rescheduled). |
+| **GET** | `/api/v1/appointments/{id}` | Get Appointment | Returns appointment metadata, assigned service, and customer info. |
+| **POST** | `/api/v1/appointments` | Book Appointment | Schedules an appointment, automatically linking or creating customer profile. |
+| **PUT** | `/api/v1/appointments/{id}` | Update Appointment | Reschedules slot time or updates notes. |
+| **POST** | `/api/v1/appointments/{id}/cancel` | Cancel Appointment | Cancels appointment with cancellation reason. |
+| **POST** | `/api/v1/appointments/{id}/complete` | Complete Appointment | Marks appointment as completed. |
 
 ---
 
-## 2. Staff Management Endpoints (`/api/v1/users`)
+## 6. Customer Management (`/api/v1/customers`)
 
-All endpoints in this section are restricted to `BUSINESS_ADMIN` and automatically scoped to the authenticated tenant.
-
-### 2.1 Create Staff Account
-- **Endpoint**: `POST /api/v1/users`
-- **Security**: `Bearer <BUSINESS_ADMIN_TOKEN>`
-- **Tags**: `Users`
-- **Request Body**:
-```json
-{
-  "full_name": "Emily Watson",
-  "email": "emily@metrohospital.com",
-  "password": "StaffPassword123!",
-  "role": "STAFF"
-}
-```
-- **Response**: `201 Created`
+| Method | Path | Summary | Description |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/v1/customers` | Customer Directory | Lists registered customers with search by name, phone number, or email. |
+| **GET** | `/api/v1/customers/{id}` | Customer 360° | Returns customer profile with chronological timeline of calls and appointment history. |
+| **POST** | `/api/v1/customers` | Create Customer | Registers a new customer profile. |
+| **PUT** | `/api/v1/customers/{id}` | Update Customer | Updates customer contact details and notes. |
+| **DELETE** | `/api/v1/customers/{id}` | Delete Customer | Removes customer record. |
 
 ---
 
-### 2.2 List Business Staff
-- **Endpoint**: `GET /api/v1/users?skip=0&limit=50`
-- **Security**: `Bearer <BUSINESS_ADMIN_TOKEN>`
-- **Tags**: `Users`
-- **Response**: `200 OK` (list of users strictly within caller's business)
+## 7. Reminder Management (`/api/v1/reminders`)
+
+| Method | Path | Summary | Description |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/v1/reminders` | List Reminders | Lists scheduled notifications with status filter (pending, sent, failed). |
+| **POST** | `/api/v1/reminders` | Schedule Reminder | Schedules an automated SMS, Voice Call, or WhatsApp notification. |
+| **PUT** | `/api/v1/reminders/{id}` | Update Reminder | Edits reminder schedule or message copy. |
+| **POST** | `/api/v1/reminders/{id}/send` | Send Immediately | Triggers manual dispatch of a pending reminder. |
+| **DELETE** | `/api/v1/reminders/{id}` | Cancel Reminder | Cancels scheduled reminder. |
 
 ---
 
-### 2.3 Get Staff Member Details
-- **Endpoint**: `GET /api/v1/users/{user_id}`
-- **Security**: `Bearer <BUSINESS_ADMIN_TOKEN>`
-- **Tags**: `Users`
-- **Response**: `200 OK` or `404 Not Found` if user belongs to another business
+## 8. Reports and Analytics (`/api/v1/reports`)
+
+| Method | Path | Summary | Description |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/v1/reports/summary` | Analytics Report | Computes KPIs, conversion rate, fulfillment rate, call intent breakdown for selected range (today, 7d, 30d, year). |
 
 ---
 
-### 2.4 Update Staff Member
-- **Endpoint**: `PUT /api/v1/users/{user_id}`
-- **Security**: `Bearer <BUSINESS_ADMIN_TOKEN>`
-- **Tags**: `Users`
-- **Request Body**:
-```json
-{
-  "full_name": "Emily Watson, RN",
-  "role": "BUSINESS_ADMIN",
-  "is_active": true
-}
-```
+## 9. Infrastructure Health Checks (`/api/v1/health`)
 
----
-
-### 2.5 Deactivate Staff Member
-- **Endpoint**: `DELETE /api/v1/users/{user_id}`
-- **Security**: `Bearer <BUSINESS_ADMIN_TOKEN>`
-- **Tags**: `Users`
-- **Response**: `200 OK` (sets `is_active = false`)
-
----
-
-## 3. Super Admin Endpoints (`/api/v1/admin`)
-
-Restricted exclusively to `SUPER_ADMIN`.
-
-### 3.1 List All Businesses
-- **Endpoint**: `GET /api/v1/admin/businesses?skip=0&limit=50`
-- **Security**: `Bearer <SUPER_ADMIN_TOKEN>`
-- **Tags**: `Admin`
-
----
-
-### 3.2 View Business Tenant Details
-- **Endpoint**: `GET /api/v1/admin/businesses/{business_id}`
-- **Security**: `Bearer <SUPER_ADMIN_TOKEN>`
-- **Tags**: `Admin`
-- **Response**: `200 OK` with counts for users, customers, appointments, and calls.
-
----
-
-### 3.3 Activate or Deactivate Business Tenant
-- **Endpoint**: `PATCH /api/v1/admin/businesses/{business_id}/status`
-- **Security**: `Bearer <SUPER_ADMIN_TOKEN>`
-- **Tags**: `Admin`
-- **Request Body**:
-```json
-{
-  "is_active": false
-}
-```
-*(Deactivating a business immediately blocks all its users from logging in or using services).*
-
----
-
-## 4. Business Management Endpoints (`/api/v1/business`)
-
-### 4.1 Business Profile
-- **GET `/api/v1/business/profile`**: View authenticated tenant profile (accessible by Admin & Staff).
-- **PUT `/api/v1/business/profile`**: Update tenant profile fields (restricted to `BUSINESS_ADMIN`).
-  - Fields: `business_name`, `business_type`, `email`, `phone_number`, `address`, `website`, `description`, `logo_url`, `timezone`.
-
-### 4.2 Weekly Working Hours
-- **GET `/api/v1/business/working-hours`**: Retrieve operating schedule (days 0–6: Monday–Sunday) with opening/closing times and `is_closed` flags.
-- **PUT `/api/v1/business/working-hours`**: Create or update schedule for specified days (restricted to `BUSINESS_ADMIN`). Validates that `opening_time < closing_time` for open days.
-
-### 4.3 Service Categories
-- **POST `/api/v1/business/categories`**: Create service category (Admin only). Prevents duplicate active category names within tenant.
-- **GET `/api/v1/business/categories`**: List tenant categories with optional `?is_active=true` filter.
-- **GET `/api/v1/business/categories/{category_id}`**: Retrieve category details.
-- **PUT `/api/v1/business/categories/{category_id}`**: Update category name, description, or status (Admin only).
-- **DELETE `/api/v1/business/categories/{category_id}`**: Soft-deactivate category (`is_active = false`).
-
-### 4.4 Business Services
-- **POST `/api/v1/business/services`**: Create commercial service offering with duration, price, currency, and category mapping.
-- **GET `/api/v1/business/services`**: List services with query filters:
-  - `?category_id=<int>`
-  - `?search=<text>` (case-insensitive name and description matching)
-  - `?is_active=<bool>`
-  - `?skip=0&limit=50` (pagination)
-- **GET `/api/v1/business/services/{service_id}`**: Retrieve service details.
-- **PUT `/api/v1/business/services/{service_id}`**: Update service offering attributes.
-- **DELETE `/api/v1/business/services/{service_id}`**: Soft-deactivate service offering.
-
----
-
-## 5. Customer Management Endpoints (`/api/v1/customers`)
-
-### 5.1 Customer Directory
-- **POST `/api/v1/customers`**: Register customer with `customer_name`, `phone_number`, `email`, `address`, `notes`. Prevents duplicate active phone numbers within the tenant.
-- **GET `/api/v1/customers`**: Search customer directory:
-  - `?search=<text>` (case-insensitive match against name, phone number, and email)
-  - `?is_active=<bool>`
-  - `?skip=0&limit=50`
-- **GET `/api/v1/customers/{customer_id}`**: Retrieve customer profile.
-- **PUT `/api/v1/customers/{customer_id}`**: Update customer contact details and notes.
-- **DELETE `/api/v1/customers/{customer_id}`**: Soft-deactivate customer record (`is_active = false`).
-
-### 5.2 Customer Interaction Dossier
-- **GET `/api/v1/customers/{customer_id}/history`**: Comprehensive interaction history aggregation returning:
-  - Full customer profile
-  - Chronological list of appointments
-  - Chronological list of telephony call history (types, status, duration, recording URLs)
-  - `total_calls`: Integer count
-  - `total_appointments`: Integer count
-  - `last_interaction_date`: Computed most recent timestamp among calls and scheduled appointments
-
----
-
-## 6. System Health Endpoints (`/api/v1/health`)
-
-- **GET `/`**: Service root information.
-- **GET `/api/v1/health`**: Backend operational status.
-- **GET `/api/v1/health/database`**: Live PostgreSQL connectivity probe.
+| Method | Path | Summary | Description |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/v1/health` | Backend Health | Returns backend service status for uptime monitoring. |
+| **GET** | `/api/v1/health/database` | Database Health | Executes a `SELECT 1` ping across the SQLAlchemy pool. |

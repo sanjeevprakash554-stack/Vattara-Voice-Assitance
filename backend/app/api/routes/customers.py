@@ -1,312 +1,202 @@
-"""Customer management and interaction history API routes."""
+"""Customer Management routes."""
 
-from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
-from app.api.deps import (
-    get_current_active_user,
-    get_current_business,
-    get_db_session,
-    require_staff,
-)
-from app.core.logging import get_logger
+from app.api.deps import get_current_user, get_db_session
 from app.models.appointment import Appointment
-from app.models.business import Business
-from app.models.call_history import CallHistory
+from app.models.call import Call
 from app.models.customer import Customer
 from app.models.user import User
-from app.schemas.auth import MessageResponse
 from app.schemas.customer import (
-    CustomerAppointmentHistoryItem,
-    CustomerCallHistoryItem,
-    CustomerCreateRequest,
-    CustomerHistoryResponse,
+    CustomerCreate,
+    CustomerDetailResponse,
     CustomerResponse,
-    CustomerUpdateRequest,
+    CustomerUpdate,
 )
 
-logger = get_logger(__name__)
 router = APIRouter()
 
 
-# ==============================================================================
-# MODULE 5: CUSTOMER MANAGEMENT
-# ==============================================================================
+@router.get("", response_model=list[CustomerResponse])
+def list_customers(
+    search: str | None = Query(None, description="Search by name, phone, or email"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+) -> list[CustomerResponse]:
+    """List customers with search filtering."""
+    stmt = (
+        select(Customer)
+        .where(Customer.business_id == current_user.business_id)
+        .order_by(Customer.name.asc())
+    )
 
-@router.post(
-    "",
-    response_model=CustomerResponse,
-    status_code=status.HTTP_201_CREATED,
-    tags=["Customers"],
-    summary="Create Customer",
-    description="Register a new customer/client record under the authenticated business tenant.",
-)
+    if search:
+        search_fmt = f"%{search}%"
+        stmt = stmt.where(
+            or_(
+                Customer.name.ilike(search_fmt),
+                Customer.phone.ilike(search_fmt),
+                Customer.email.ilike(search_fmt),
+            )
+        )
+
+    stmt = stmt.offset(offset).limit(limit)
+    customers = db.scalars(stmt).all()
+    return [CustomerResponse.model_validate(c) for c in customers]
+
+
+@router.get("/{customer_id}", response_model=CustomerDetailResponse)
+def get_customer_details(
+    customer_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+) -> CustomerDetailResponse:
+    """Retrieve single customer and their complete timeline of calls and appointments."""
+    customer = db.scalar(
+        select(Customer).where(
+            Customer.id == customer_id, Customer.business_id == current_user.business_id
+        )
+    )
+    if not customer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found.")
+
+    # Fetch calls
+    calls = db.scalars(
+        select(Call)
+        .where(Call.customer_id == customer.id)
+        .order_by(Call.initiated_at.desc())
+        .limit(20)
+    ).all()
+
+    # Fetch appointments
+    appts = db.scalars(
+        select(Appointment)
+        .where(Appointment.customer_id == customer.id)
+        .order_by(Appointment.appointment_time.desc())
+        .limit(20)
+    ).all()
+
+    call_dicts = [
+        {
+            "id": c.id,
+            "call_type": c.call_type,
+            "status": c.status,
+            "duration_seconds": c.duration_seconds,
+            "summary": c.summary,
+            "initiated_at": c.initiated_at.isoformat(),
+        }
+        for c in calls
+    ]
+
+    appt_dicts = [
+        {
+            "id": a.id,
+            "status": a.status,
+            "appointment_time": a.appointment_time.isoformat(),
+            "notes": a.notes,
+            "source": a.source,
+            "service_name": a.service.name if a.service else "Consultation",
+        }
+        for a in appts
+    ]
+
+    return CustomerDetailResponse(
+        id=customer.id,
+        business_id=customer.business_id,
+        name=customer.name,
+        phone=customer.phone,
+        email=customer.email,
+        notes=customer.notes,
+        total_calls=len(calls),
+        total_appointments=len(appts),
+        created_at=customer.created_at,
+        updated_at=customer.updated_at,
+        calls=call_dicts,
+        appointments=appt_dicts,
+    )
+
+
+@router.post("", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
 def create_customer(
-    payload: CustomerCreateRequest,
-    business: Business = Depends(get_current_business),
-    current_user: User = Depends(require_staff),
+    payload: CustomerCreate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db_session),
 ) -> CustomerResponse:
-    """Create a customer record with duplicate prevention within the tenant."""
-    clean_phone = payload.phone_number.strip()
-
-    # Prevent duplicate active customer by phone number within the same tenant
-    existing = (
-        db.query(Customer)
-        .filter(
-            Customer.business_id == business.id,
-            Customer.phone_number == clean_phone,
-            Customer.is_active.is_(True),
+    """Create a new customer profile."""
+    # Check phone uniqueness within business
+    existing = db.scalar(
+        select(Customer).where(
+            Customer.business_id == current_user.business_id,
+            Customer.phone == payload.phone,
         )
-        .first()
     )
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"An active customer with phone number '{clean_phone}' already exists in your business.",
+            detail="A customer with this phone number already exists in your organization.",
         )
 
     customer = Customer(
-        business_id=business.id,
-        customer_name=payload.customer_name.strip(),
-        phone_number=clean_phone,
-        email=str(payload.email).lower().strip() if payload.email else None,
-        address=payload.address.strip() if payload.address else None,
-        notes=payload.notes.strip() if payload.notes else None,
-        is_active=True,
+        business_id=current_user.business_id,
+        name=payload.name,
+        phone=payload.phone,
+        email=payload.email,
+        notes=payload.notes,
     )
     db.add(customer)
     db.commit()
     db.refresh(customer)
-
-    logger.info("User ID %d created customer '%s' (ID %d) in Business ID %d", current_user.id, customer.customer_name, customer.id, business.id)
     return CustomerResponse.model_validate(customer)
 
 
-@router.get(
-    "",
-    response_model=list[CustomerResponse],
-    tags=["Customers"],
-    summary="List & Search Customers",
-    description="Retrieve customer records with text search (name, phone, email), active filter, and pagination.",
-)
-def list_customers(
-    search: str | None = Query(default=None, description="Search term matching customer name, phone number, or email"),
-    is_active: bool | None = Query(default=None, description="Filter by active status"),
-    skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=100),
-    business: Business = Depends(get_current_business),
-    db: Session = Depends(get_db_session),
-) -> list[CustomerResponse]:
-    """List and search customers strictly belonging to the caller's business."""
-    query = db.query(Customer).filter(Customer.business_id == business.id)
-
-    if is_active is not None:
-        query = query.filter(Customer.is_active == is_active)
-
-    if search:
-        pattern = f"%{search.strip()}%"
-        query = query.filter(
-            or_(
-                Customer.customer_name.ilike(pattern),
-                Customer.phone_number.ilike(pattern),
-                Customer.email.ilike(pattern),
-            )
-        )
-
-    customers = query.order_by(Customer.customer_name.asc()).offset(skip).limit(limit).all()
-    return [CustomerResponse.model_validate(c) for c in customers]
-
-
-@router.get(
-    "/{customer_id}",
-    response_model=CustomerResponse,
-    tags=["Customers"],
-    summary="Get Customer Details",
-    description="Retrieve full profile details of a customer within the authenticated business.",
-)
-def get_customer(
-    customer_id: int,
-    business: Business = Depends(get_current_business),
-    db: Session = Depends(get_db_session),
-) -> CustomerResponse:
-    """Get single customer profile enforcing multi-tenant boundaries."""
-    customer = (
-        db.query(Customer)
-        .filter(Customer.id == customer_id, Customer.business_id == business.id)
-        .first()
-    )
-    if not customer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Customer not found in your business organization.",
-        )
-    return CustomerResponse.model_validate(customer)
-
-
-@router.put(
-    "/{customer_id}",
-    response_model=CustomerResponse,
-    tags=["Customers"],
-    summary="Update Customer Profile",
-    description="Update customer information, contact details, or notes.",
-)
+@router.put("/{customer_id}", response_model=CustomerResponse)
 def update_customer(
-    customer_id: int,
-    payload: CustomerUpdateRequest,
-    business: Business = Depends(get_current_business),
-    current_user: User = Depends(require_staff),
+    customer_id: str,
+    payload: CustomerUpdate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db_session),
 ) -> CustomerResponse:
-    """Update customer profile information."""
-    customer = (
-        db.query(Customer)
-        .filter(Customer.id == customer_id, Customer.business_id == business.id)
-        .first()
+    """Update customer details."""
+    customer = db.scalar(
+        select(Customer).where(
+            Customer.id == customer_id, Customer.business_id == current_user.business_id
+        )
     )
     if not customer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Customer not found in your business organization.",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found.")
 
-    if payload.phone_number is not None:
-        clean_phone = payload.phone_number.strip()
-        existing = (
-            db.query(Customer)
-            .filter(
-                Customer.business_id == business.id,
-                Customer.phone_number == clean_phone,
-                Customer.id != customer.id,
-                Customer.is_active.is_(True),
-            )
-            .first()
-        )
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Another active customer with phone number '{clean_phone}' already exists.",
-            )
-        customer.phone_number = clean_phone
-
-    if payload.customer_name is not None:
-        customer.customer_name = payload.customer_name.strip()
+    if payload.name is not None:
+        customer.name = payload.name
+    if payload.phone is not None:
+        customer.phone = payload.phone
     if payload.email is not None:
-        customer.email = str(payload.email).lower().strip()
-    if payload.address is not None:
-        customer.address = payload.address.strip()
+        customer.email = payload.email
     if payload.notes is not None:
-        customer.notes = payload.notes.strip()
-    if payload.is_active is not None:
-        customer.is_active = payload.is_active
+        customer.notes = payload.notes
 
     db.commit()
     db.refresh(customer)
-
-    logger.info("User ID %d updated customer ID %d in Business ID %d", current_user.id, customer.id, business.id)
     return CustomerResponse.model_validate(customer)
 
 
-@router.delete(
-    "/{customer_id}",
-    response_model=MessageResponse,
-    tags=["Customers"],
-    summary="Deactivate Customer",
-    description="Soft-deactivate a customer record (preserves historical calls and appointments).",
-)
+@router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_customer(
-    customer_id: int,
-    business: Business = Depends(get_current_business),
-    current_user: User = Depends(require_staff),
+    customer_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db_session),
-) -> MessageResponse:
-    """Soft deactivation of customer."""
-    customer = (
-        db.query(Customer)
-        .filter(Customer.id == customer_id, Customer.business_id == business.id)
-        .first()
+) -> None:
+    """Delete a customer record."""
+    customer = db.scalar(
+        select(Customer).where(
+            Customer.id == customer_id, Customer.business_id == current_user.business_id
+        )
     )
     if not customer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Customer not found in your business organization.",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found.")
 
-    customer.is_active = False
+    db.delete(customer)
     db.commit()
 
-    logger.info("User ID %d deactivated customer ID %d in Business ID %d", current_user.id, customer.id, business.id)
-    return MessageResponse(message="Customer successfully deactivated.")
-
-
-# ==============================================================================
-# MODULE 6: CUSTOMER HISTORY
-# ==============================================================================
-
-@router.get(
-    "/{customer_id}/history",
-    response_model=CustomerHistoryResponse,
-    tags=["Customer History"],
-    summary="Get Customer Interaction History",
-    description="Retrieve a comprehensive dossier of previous appointments, telephony call logs, and latest activity.",
-)
-def get_customer_history(
-    customer_id: int,
-    business: Business = Depends(get_current_business),
-    db: Session = Depends(get_db_session),
-) -> CustomerHistoryResponse:
-    """Retrieve historical appointments and call history for a customer."""
-    customer = (
-        db.query(Customer)
-        .filter(Customer.id == customer_id, Customer.business_id == business.id)
-        .first()
-    )
-    if not customer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Customer not found in your business organization.",
-        )
-
-    # 1. Fetch appointments
-    appts = (
-        db.query(Appointment)
-        .filter(Appointment.customer_id == customer.id, Appointment.business_id == business.id)
-        .order_by(Appointment.appointment_date.desc(), Appointment.appointment_time.desc())
-        .all()
-    )
-
-    # 2. Fetch call history
-    calls = (
-        db.query(CallHistory)
-        .filter(CallHistory.customer_id == customer.id, CallHistory.business_id == business.id)
-        .order_by(CallHistory.created_at.desc())
-        .all()
-    )
-
-    # 3. Compute last interaction date
-    candidates: list[datetime] = []
-    if calls:
-        candidates.append(calls[0].created_at)
-    if appts:
-        appt_latest = appts[0]
-        # Combine date and time into timezone-aware datetime (UTC)
-        appt_dt = datetime.combine(
-            appt_latest.appointment_date,
-            appt_latest.appointment_time,
-            tzinfo=timezone.utc,
-        )
-        candidates.append(appt_dt)
-        if appt_latest.created_at:
-            candidates.append(appt_latest.created_at)
-
-    last_interaction = max(candidates) if candidates else None
-
-    return CustomerHistoryResponse(
-        customer=CustomerResponse.model_validate(customer),
-        appointments=[CustomerAppointmentHistoryItem.model_validate(a) for a in appts],
-        call_history=[CustomerCallHistoryItem.model_validate(c) for c in calls],
-        total_calls=len(calls),
-        total_appointments=len(appts),
-        last_interaction_date=last_interaction,
-    )

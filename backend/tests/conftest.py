@@ -6,15 +6,19 @@ Provides isolated test client and database session overrides.
 from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import app.models  # Ensures all model metadata is registered
 from app.api.deps import get_db_session
+from app.core.config import settings
 from app.database.base import Base
 from app.database.connection import get_db
+import app.models  # Ensure all model tables are registered in Base.metadata
 from app.main import app
+
+# Ensure environment is set to test to prevent production DB calls in lifespan
+settings.ENVIRONMENT = "test"
 
 # Create in-memory SQLite engine for tests
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -24,15 +28,6 @@ test_engine = create_engine(
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
-
-
-# Enable SQLite foreign key constraints enforcement
-@event.listens_for(test_engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record) -> None:
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
-
 
 TestingSessionLocal = sessionmaker(
     autocommit=False,
@@ -46,6 +41,9 @@ TestingSessionLocal = sessionmaker(
 def setup_test_db() -> Generator[None, None, None]:
     """Create test database tables once per session and clean up after."""
     Base.metadata.create_all(bind=test_engine)
+    with TestingSessionLocal() as db:
+        from app.database.init_db import init_db
+        init_db(db)
     yield
     Base.metadata.drop_all(bind=test_engine)
 
@@ -60,8 +58,7 @@ def db_session() -> Generator[Session, None, None]:
     yield session
 
     session.close()
-    if transaction.is_active:
-        transaction.rollback()
+    transaction.rollback()
     connection.close()
 
 

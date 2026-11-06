@@ -7,7 +7,6 @@ custom error handling, and root endpoints.
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -34,6 +33,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Mask password when logging database URI
     safe_db_target = settings.POSTGRES_SERVER
     logger.info("Configured database host: %s (port %s)", safe_db_target, settings.POSTGRES_PORT)
+
+    # Initialize tables and seed demo data if not running isolated tests
+    if settings.ENVIRONMENT != "test":
+        try:
+            from app.database.connection import SessionLocal
+            from app.database.init_db import init_db
+            with SessionLocal() as db:
+                init_db(db)
+        except Exception as exc:
+            logger.warning("Database auto-init skipped or deferred: %s", exc)
+
     yield
     logger.info("Shutting down %s...", settings.PROJECT_NAME)
 
@@ -78,10 +88,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     """Standardized handler for schema validation failures."""
     logger.warning("Validation error on %s: %s", request.url.path, exc.errors())
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
             "detail": "Request payload validation failed",
-            "errors": jsonable_encoder(exc.errors()),
+            "errors": exc.errors(),
         },
     )
 

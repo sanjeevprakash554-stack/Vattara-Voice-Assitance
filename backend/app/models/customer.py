@@ -1,46 +1,32 @@
-"""SQLAlchemy model for Customer entity."""
+"""SQLAlchemy model for Customers."""
 
-from typing import TYPE_CHECKING
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+import uuid
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.base import Base, TimestampMixin
 
-if TYPE_CHECKING:
-    from app.models.appointment import Appointment
-    from app.models.business import Business
-    from app.models.call_history import CallHistory
-
 
 class Customer(Base, TimestampMixin):
-    """Client, patient, or guest associated with a business tenant."""
+    """Customer entity associated with a Business."""
 
     __tablename__ = "customers"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
-    business_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("businesses.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    customer_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    phone_number: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    business_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    phone: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    total_calls: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_appointments: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Relationships
-    business: Mapped["Business"] = relationship("Business", back_populates="customers")
-    appointments: Mapped[list["Appointment"]] = relationship(
-        "Appointment",
-        back_populates="customer",
-        cascade="all, delete-orphan",
-    )
-    call_histories: Mapped[list["CallHistory"]] = relationship(
-        "CallHistory",
-        back_populates="customer",
-    )
+    business = relationship("Business", back_populates="customers")
+    calls = relationship("Call", back_populates="customer", cascade="all, delete-orphan")
+    appointments = relationship("Appointment", back_populates="customer", cascade="all, delete-orphan")
+    reminders = relationship("Reminder", back_populates="customer", cascade="all, delete-orphan")
 
-    def __repr__(self) -> str:
-        return f"<Customer(id={self.id}, name='{self.customer_name}', phone='{self.phone_number}')>"
