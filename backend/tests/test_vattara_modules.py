@@ -43,10 +43,10 @@ def test_auth_workflow(client: TestClient) -> None:
     assert me_data["business"]["vertical"] == "clinic"
 
 
-def test_assistant_and_knowledge_base(client: TestClient) -> None:
+def test_assistant_and_knowledge_base(client: TestClient, auth_headers: dict[str, str]) -> None:
     """Test AI assistant settings, services, and FAQ management."""
     # 1. Get Assistant Config
-    cfg_res = client.get(f"{settings.API_V1_STR}/assistant")
+    cfg_res = client.get(f"{settings.API_V1_STR}/assistant", headers=auth_headers)
     assert cfg_res.status_code == 200
     cfg = cfg_res.json()
     assert "assistant_name" in cfg
@@ -63,6 +63,7 @@ def test_assistant_and_knowledge_base(client: TestClient) -> None:
             "working_hours": "{}",
             "is_active": True,
         },
+        headers=auth_headers,
     )
     assert update_res.status_code == 200
     assert update_res.json()["assistant_name"] == "Vattara Pro Voice"
@@ -77,11 +78,12 @@ def test_assistant_and_knowledge_base(client: TestClient) -> None:
             "price": 2500.0,
             "is_active": True,
         },
+        headers=auth_headers,
     )
     assert srv_res.status_code == 201
     srv_id = srv_res.json()["id"]
 
-    list_srv = client.get(f"{settings.API_V1_STR}/assistant/services")
+    list_srv = client.get(f"{settings.API_V1_STR}/assistant/services", headers=auth_headers)
     assert list_srv.status_code == 200
     assert any(s["id"] == srv_id for s in list_srv.json())
 
@@ -94,16 +96,17 @@ def test_assistant_and_knowledge_base(client: TestClient) -> None:
             "answer": "Yes, we support 0% interest EMI options for treatments above ₹5000.",
             "is_active": True,
         },
+        headers=auth_headers,
     )
     assert faq_res.status_code == 201
     faq_id = faq_res.json()["id"]
 
-    list_faqs = client.get(f"{settings.API_V1_STR}/assistant/faqs")
+    list_faqs = client.get(f"{settings.API_V1_STR}/assistant/faqs", headers=auth_headers)
     assert list_faqs.status_code == 200
     assert any(f["id"] == faq_id for f in list_faqs.json())
 
 
-def test_customers_and_appointments(client: TestClient) -> None:
+def test_customers_and_appointments(client: TestClient, auth_headers: dict[str, str]) -> None:
     """Test customer creation, appointment booking, rescheduling, and cancellation."""
     # 1. Create Customer
     cust_res = client.post(
@@ -114,6 +117,7 @@ def test_customers_and_appointments(client: TestClient) -> None:
             "email": "suresh@example.com",
             "notes": "VIP Patient",
         },
+        headers=auth_headers,
     )
     assert cust_res.status_code == 201
     customer = cust_res.json()
@@ -129,6 +133,7 @@ def test_customers_and_appointments(client: TestClient) -> None:
             "notes": "Consultation for dental implant",
             "source": "ai_call",
         },
+        headers=auth_headers,
     )
     assert appt_res.status_code == 201
     appt = appt_res.json()
@@ -136,27 +141,29 @@ def test_customers_and_appointments(client: TestClient) -> None:
     assert appt["status"] == "upcoming"
 
     # 3. Customer detail timeline
-    cust_detail = client.get(f"{settings.API_V1_STR}/customers/{cust_id}")
+    cust_detail = client.get(f"{settings.API_V1_STR}/customers/{cust_id}", headers=auth_headers)
     assert cust_detail.status_code == 200
     assert len(cust_detail.json()["appointments"]) >= 1
 
     # 4. Reschedule Appointment
     resched = client.put(
         f"{settings.API_V1_STR}/appointments/{appt_id}",
-        json={"appointment_time": "2026-11-12T14:00:00Z", "status": "rescheduled"},
+        json={"appointment_time": "2026-11-20T14:00:00Z", "status": "rescheduled"},
+        headers=auth_headers,
     )
     assert resched.status_code == 200
     assert resched.json()["status"] == "rescheduled"
 
     # 5. Cancel Appointment
     cancel_res = client.post(
-        f"{settings.API_V1_STR}/appointments/{appt_id}/cancel?reason=Schedule%20Conflict"
+        f"{settings.API_V1_STR}/appointments/{appt_id}/cancel?reason=Schedule%20Conflict",
+        headers=auth_headers,
     )
     assert cancel_res.status_code == 200
     assert cancel_res.json()["status"] == "cancelled"
 
 
-def test_call_management_and_simulation(client: TestClient) -> None:
+def test_call_management_and_simulation(client: TestClient, auth_headers: dict[str, str]) -> None:
     """Test call simulation, filtering, and retrieval."""
     # 1. Simulate an Inbound Call
     sim_res = client.post(
@@ -168,6 +175,7 @@ def test_call_management_and_simulation(client: TestClient) -> None:
             "scenario": "Cardiology Booking",
             "duration_seconds": 120,
         },
+        headers=auth_headers,
     )
     assert sim_res.status_code == 201
     sim_data = sim_res.json()
@@ -176,33 +184,34 @@ def test_call_management_and_simulation(client: TestClient) -> None:
     assert "transcript" in sim_data
 
     # 2. List calls with filter
-    list_res = client.get(f"{settings.API_V1_STR}/calls?call_type=incoming")
+    list_res = client.get(f"{settings.API_V1_STR}/calls?call_type=incoming", headers=auth_headers)
     assert list_res.status_code == 200
     assert len(list_res.json()) >= 1
 
     # 3. Retrieve call detail
-    detail_res = client.get(f"{settings.API_V1_STR}/calls/{call_id}")
+    detail_res = client.get(f"{settings.API_V1_STR}/calls/{call_id}", headers=auth_headers)
     assert detail_res.status_code == 200
     assert detail_res.json()["caller_name"] == "Divya Prakash"
 
 
-def test_reminders_and_reports(client: TestClient) -> None:
+def test_reminders_and_reports(client: TestClient, auth_headers: dict[str, str]) -> None:
     """Test reminder dispatch and reports generation."""
     # 1. List Reminders
-    rem_list = client.get(f"{settings.API_V1_STR}/reminders")
+    rem_list = client.get(f"{settings.API_V1_STR}/reminders", headers=auth_headers)
     assert rem_list.status_code == 200
 
     # 2. Dashboard Stats
-    stats_res = client.get(f"{settings.API_V1_STR}/dashboard/stats")
+    stats_res = client.get(f"{settings.API_V1_STR}/dashboard/stats", headers=auth_headers)
     assert stats_res.status_code == 200
     stats = stats_res.json()
     assert "total_incoming_calls" in stats
     assert "total_appointments" in stats
 
     # 3. Reports Summary
-    rep_res = client.get(f"{settings.API_V1_STR}/reports/summary?range_type=7d")
+    rep_res = client.get(f"{settings.API_V1_STR}/reports/summary?range_type=7d", headers=auth_headers)
     assert rep_res.status_code == 200
     rep = rep_res.json()
     assert "metrics" in rep
     assert "timeline" in rep
+
 

@@ -1,13 +1,19 @@
 """Authentication and User Profile routes."""
 
+import secrets
+from datetime import datetime, timedelta, timezone
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db_session
+from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.rate_limiter import SlidingWindowRateLimiter
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.assistant import AssistantConfig
 from app.models.business import Business
+from app.models.password_reset import PasswordReset
 from app.models.user import User
 from app.schemas.auth import (
     BusinessResponse,
@@ -23,6 +29,24 @@ from app.schemas.auth import (
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+login_rate_limiter = SlidingWindowRateLimiter(
+    times=settings.RATE_LIMIT_LOGIN_PER_MINUTE,
+    seconds=60,
+    name="auth_login",
+)
+
+forgot_password_rate_limiter = SlidingWindowRateLimiter(
+    times=settings.RATE_LIMIT_FORGOT_PASSWORD_PER_MINUTE,
+    seconds=60,
+    name="auth_forgot_password",
+)
+
+reset_password_rate_limiter = SlidingWindowRateLimiter(
+    times=settings.RATE_LIMIT_RESET_PASSWORD_PER_MINUTE,
+    seconds=60,
+    name="auth_reset_password",
+)
 
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
@@ -92,7 +116,7 @@ def register_business(
     )
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=Token, dependencies=[Depends(login_rate_limiter)])
 def login(
     payload: LoginRequest,
     db: Session = Depends(get_db_session),
@@ -184,29 +208,106 @@ def update_profile(
     )
 
 
-@router.post("/forgot-password")
-def forgot_password(payload: ForgotPasswordRequest) -> dict[str, str]:
-    """Dispatch password reset verification code (demo simulation)."""
-    return {
-        "status": "success",
-        "message": f"Password reset instructions and verification code sent to {payload.email}.",
-    }
+@router.post("/forgot-password", dependencies=[Depends(forgot_password_rate_limiter)])
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Generate and record a secure, time-limited password reset verification code."""
+    user = db.scalar(select(User).where(User.email == payload.email, User.is_active.is_(True)))
+
+    # Generic user-facing message to prevent email enumeration
+    response_msg = f"If an active account exists for {payload.email}, password reset instructions have been dispatched."
+
+    if not user:
+        return {"status": "success", "message": response_msg}
+
+    # Invalidate any existing unused reset codes for this user
+    existing_resets = db.scalars(
+        select(PasswordReset).where(
+            PasswordReset.user_id == user.id,
+            PasswordReset.is_used.is_(False),
+        )
+    ).all()
+    for r in existing_resets:
+        r.is_used = True
+
+    # Generate cryptographically secure 6-digit verification code
+    reset_code = f"{secrets.randbelow(900000) + 100000}"
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+
+    reset_record = PasswordReset(
+        user_id=user.id,
+        email=user.email,
+        code_hash=get_password_hash(reset_code),
+        expires_at=expires_at,
+        is_used=False,
+    )
+    db.add(reset_record)
+    db.commit()
+
+    logger.info("Generated secure password reset code for user %s (expires in 15 mins)", user.email)
+
+    result: dict[str, Any] = {"status": "success", "message": response_msg}
+    # In non-production environments, expose reset_code in response to assist development & testing
+    if settings.ENVIRONMENT != "production":
+        result["reset_code"] = reset_code
+
+    return result
 
 
-@router.post("/reset-password")
+@router.post("/reset-password", dependencies=[Depends(reset_password_rate_limiter)])
 def reset_password(
     payload: ResetPasswordRequest,
     db: Session = Depends(get_db_session),
 ) -> dict[str, str]:
-    """Reset forgotten user password with verification code."""
-    user = db.scalar(select(User).where(User.email == payload.email))
+    """Reset forgotten user password after verifying time-limited code."""
+    if not payload.reset_code or not payload.reset_code.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification code is required.",
+        )
+
+    user = db.scalar(select(User).where(User.email == payload.email, User.is_active.is_(True)))
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No account registered with this email address.",
+            detail="No active account registered with this email address.",
         )
 
+    now = datetime.now(timezone.utc)
+    # Find most recent valid, unexpired, unused reset record for this user
+    reset_record = db.scalar(
+        select(PasswordReset)
+        .where(
+            PasswordReset.user_id == user.id,
+            PasswordReset.is_used.is_(False),
+            PasswordReset.expires_at >= now,
+        )
+        .order_by(PasswordReset.created_at.desc())
+        .limit(1)
+    )
+
+    if not reset_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password reset code has expired or was not requested.",
+        )
+
+    # Verify code using PBKDF2 hash verification
+    if not verify_password(payload.reset_code.strip(), reset_record.code_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset verification code.",
+        )
+
+    # Invalidate code upon successful use
+    reset_record.is_used = True
+
+    # Update user password with secure hash
     user.hashed_password = get_password_hash(payload.new_password)
     db.commit()
+    logger.info("Password successfully reset for user %s", user.email)
+
     return {"status": "success", "message": "Password successfully reset. You may now log in."}
 

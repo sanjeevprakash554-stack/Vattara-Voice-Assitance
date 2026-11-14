@@ -16,6 +16,9 @@ import {
   Zap,
   Activity,
   Layers,
+  Radio,
+  BellRing,
+  PieChart as PieChartIcon,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -30,7 +33,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from 'recharts';
 import StatCard from '../../components/common/StatCard';
 import { reportsService } from '../../services/api';
@@ -42,6 +44,8 @@ export default function Reports() {
   const [rangeType, setRangeType] = useState('7d');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [csvType, setCsvType] = useState('calls');
 
   const chartColors = [colors.burnt, colors.amber, colors.lavender, '#10B981'];
 
@@ -61,8 +65,8 @@ export default function Reports() {
     fetchReports();
   }, [rangeType]);
 
-  const handleExportCSV = () => {
-    if (!data) return;
+  const handleExportCSV = async () => {
+    setExporting(true);
     confetti({
       particleCount: 50,
       spread: 60,
@@ -70,28 +74,13 @@ export default function Reports() {
       colors: ['#E47745', '#F0AD57', '#A78BFA'],
     });
 
-    const rows = [
-      ['Metric', 'Value'],
-      ['Total Calls', data.metrics.total_calls],
-      ['Incoming Calls', data.metrics.incoming_calls],
-      ['Outgoing Calls', data.metrics.outgoing_calls],
-      ['Successful Calls', data.metrics.successful_calls],
-      ['Missed Calls', data.metrics.missed_calls],
-      ['Call Success Rate (%)', data.metrics.call_success_rate],
-      ['Avg Call Duration (s)', data.metrics.avg_call_duration_seconds],
-      ['Total Appointments', data.metrics.total_appointments],
-      ['Completed Appointments', data.metrics.completed_appointments],
-      ['Appointment Fulfillment Rate (%)', data.metrics.appointment_fulfillment_rate],
-    ];
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + rows.map((e) => e.join(',')).join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `vattara_telemetry_report_${rangeType}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      await reportsService.exportCsv(csvType);
+    } catch (err) {
+      console.error('Failed to export CSV from server:', err);
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading || !data) {
@@ -105,13 +94,19 @@ export default function Reports() {
     );
   }
 
-  const { metrics, daily_breakdown } = data;
+  const { metrics, timeline, duration_distribution, provider_breakdown, reminder_delivery } = data;
 
-  const pieData = [
-    { name: 'Successful Calls', value: metrics.successful_calls },
-    { name: 'Missed / Dropped', value: metrics.missed_calls || 1 },
-    { name: 'Completed Appts', value: metrics.completed_appointments },
-    { name: 'Inbound Placed', value: metrics.incoming_calls },
+  const durationData = [
+    { label: '< 1 min', count: duration_distribution?.under_1_min || 0 },
+    { label: '1 - 3 mins', count: duration_distribution?.['1_to_3_mins'] || 0 },
+    { label: '3 - 5 mins', count: duration_distribution?.['3_to_5_mins'] || 0 },
+    { label: '5+ mins', count: duration_distribution?.over_5_mins || 0 },
+  ];
+
+  const providerData = [
+    { name: 'Twilio Media Stream', value: provider_breakdown?.twilio || 0, color: colors.burnt },
+    { name: 'Tata Smartflo SIP', value: provider_breakdown?.smartflo || 0, color: colors.amber },
+    { name: 'Exotel Voice Gateway', value: provider_breakdown?.exotel || 0, color: colors.lavender },
   ];
 
   return (
@@ -131,7 +126,7 @@ export default function Reports() {
                 Executive Telemetry & Intelligence
               </span>
               <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
-                <ShieldCheck className="w-3 h-3" /> Zero Data Loss
+                <ShieldCheck className="w-3 h-3" /> Realtime Metrics
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-ivory tracking-tight">
@@ -139,7 +134,7 @@ export default function Reports() {
             </h1>
             <p className="text-xs sm:text-sm text-mutedgrey max-w-xl">
               High-fidelity operational analytics, automated call fulfillment ratios, handle-time
-              distributions, and CSV export capabilities.
+              distributions, telephony provider breakdowns, and CSV export capabilities.
             </p>
           </div>
 
@@ -148,9 +143,11 @@ export default function Reports() {
             {/* Range Toggle */}
             <div className="flex items-center bg-warmblack/70 p-1 rounded-xl border border-graphite">
               {[
+                { id: 'today', label: 'Today' },
                 { id: '7d', label: '7 Days' },
                 { id: '30d', label: '30 Days' },
                 { id: '90d', label: '90 Days' },
+                { id: 'year', label: 'Year' },
               ].map((r) => (
                 <button
                   key={r.id}
@@ -166,13 +163,27 @@ export default function Reports() {
               ))}
             </div>
 
-            <button
-              onClick={handleExportCSV}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-burnt to-amber text-warmblack font-bold text-xs flex items-center gap-2 shadow-lg shadow-burnt/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export CSV
-            </button>
+            {/* CSV Export Control */}
+            <div className="flex items-center gap-1.5 bg-warmblack/70 p-1 rounded-xl border border-graphite">
+              <select
+                value={csvType}
+                onChange={(e) => setCsvType(e.target.value)}
+                className="bg-transparent text-xs text-ivory font-mono px-2 py-1 focus:outline-none"
+              >
+                <option value="calls" className="bg-charcoal text-ivory">Calls</option>
+                <option value="appointments" className="bg-charcoal text-ivory">Appointments</option>
+                <option value="reminders" className="bg-charcoal text-ivory">Reminders</option>
+              </select>
+
+              <button
+                onClick={handleExportCSV}
+                disabled={exporting}
+                className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-burnt to-amber text-warmblack font-bold text-xs flex items-center gap-1.5 shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" />
+                {exporting ? 'Exporting...' : 'Export CSV'}
+              </button>
+            </div>
 
             <button
               onClick={fetchReports}
@@ -188,12 +199,12 @@ export default function Reports() {
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <StatCard
-          title="Total Telephony Throughput"
+          title="Telephony Throughput"
           value={metrics.total_calls}
           subtext={`${metrics.incoming_calls} Inbound • ${metrics.outgoing_calls} Outbound`}
           icon={PhoneCall}
           color="burnt"
-          trend="+14% this period"
+          trend="PSTN & SIP Trunks"
         />
 
         <StatCard
@@ -202,7 +213,7 @@ export default function Reports() {
           subtext={`${metrics.successful_calls} resolved / ${metrics.missed_calls} missed`}
           icon={Zap}
           color="amber"
-          trend="+3.2% vs last week"
+          trend="Zero human intervention"
         />
 
         <StatCard
@@ -211,7 +222,7 @@ export default function Reports() {
           subtext={`${metrics.completed_appointments} completed of ${metrics.total_appointments}`}
           icon={CalendarCheck2}
           color="lavender"
-          trend="Optimal conversion"
+          trend={`${metrics.appointment_conversion_rate}% call conversion`}
         />
 
         <StatCard
@@ -220,32 +231,32 @@ export default function Reports() {
           subtext={`~${Math.round(metrics.avg_call_duration_seconds / 60)} min per voice session`}
           icon={Clock}
           color="charcoal"
-          trend="-12s latency improvement"
+          trend="Real-time speech streaming"
         />
       </div>
 
-      {/* Primary Chart: Telephony & Appointment Volume Stream */}
+      {/* Primary Chart: Telephony Timeline Volume Stream */}
       <div className="glass-panel p-6 sm:p-7 rounded-3xl border border-graphite space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-burnt">
               Temporal Trajectory
             </span>
-            <h3 className="text-lg font-bold text-ivory">Call Volume vs Appointment Conversions</h3>
+            <h3 className="text-lg font-bold text-ivory">Daily Inbound vs Outbound Call Flow</h3>
           </div>
           <div className="flex items-center gap-4 text-xs font-mono">
             <span className="flex items-center gap-1.5 text-burnt">
-              <span className="w-2.5 h-2.5 rounded-full bg-burnt" /> AI Voice Calls
+              <span className="w-2.5 h-2.5 rounded-full bg-burnt" /> Incoming Calls
             </span>
             <span className="flex items-center gap-1.5 text-amber">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber" /> Appointments Booked
+              <span className="w-2.5 h-2.5 rounded-full bg-amber" /> Outbound Reminders
             </span>
           </div>
         </div>
 
         <div className="h-80 w-full pt-4">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={daily_breakdown} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+            <AreaChart data={timeline || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="callGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={colors.burnt} stopOpacity={0.4} />
@@ -272,55 +283,48 @@ export default function Reports() {
                   borderRadius: '12px',
                   color: colors.ivory,
                   fontSize: '12px',
-                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
                 }}
               />
               <Area
                 type="monotone"
-                dataKey="calls"
+                dataKey="incoming"
                 stroke={colors.burnt}
                 strokeWidth={2.5}
                 fillOpacity={1}
                 fill="url(#callGrad)"
-                name="Voice Calls"
+                name="Incoming Calls"
               />
               <Area
                 type="monotone"
-                dataKey="appointments"
+                dataKey="outgoing"
                 stroke={colors.amber}
                 strokeWidth={2}
                 fillOpacity={1}
                 fill="url(#apptGrad)"
-                name="Appointments"
+                name="Outgoing Calls"
               />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Secondary Two-Column Grid: Bar Chart & Telephony Distribution */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Daily Disposition Bar Chart */}
+      {/* Secondary Three-Column Grid: Duration Distribution, Provider Breakdown, and Reminder Stats */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Card 1: Call Duration Distribution */}
         <div className="glass-panel p-6 rounded-3xl border border-graphite space-y-4">
           <div>
             <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-amber">
-              Daily Distribution
+              Duration Histogram
             </span>
-            <h3 className="text-base font-bold text-ivory">Completed Appointments by Day</h3>
+            <h3 className="text-base font-bold text-ivory">Call Length Distribution</h3>
           </div>
 
-          <div className="h-64 w-full">
+          <div className="h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={daily_breakdown} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={durationData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={colors.graphite} vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  stroke={colors.mutedgrey}
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis stroke={colors.mutedgrey} fontSize={11} tickLine={false} axisLine={false} />
+                <XAxis dataKey="label" stroke={colors.mutedgrey} fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke={colors.mutedgrey} fontSize={10} tickLine={false} axisLine={false} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: colors.warmblack,
@@ -330,45 +334,35 @@ export default function Reports() {
                     fontSize: '12px',
                   }}
                 />
-                <Bar
-                  dataKey="completed"
-                  fill={colors.lavender}
-                  radius={[6, 6, 0, 0]}
-                  name="Completed Appointments"
-                />
+                <Bar dataKey="count" fill={colors.burnt} radius={[6, 6, 0, 0]} name="Calls" />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Telemetry Channel Composition Donut */}
+        {/* Card 2: Telephony Provider Breakdown */}
         <div className="glass-panel p-6 rounded-3xl border border-graphite space-y-4 flex flex-col justify-between">
           <div>
             <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-lavender">
-              Composition Breakdown
+              Carrier Telemetry
             </span>
-            <h3 className="text-base font-bold text-ivory">Telemetry Resolution Channels</h3>
+            <h3 className="text-base font-bold text-ivory">Telephony Provider Ratio</h3>
           </div>
 
-          <div className="h-56 w-full flex items-center justify-center">
+          <div className="h-44 w-full flex items-center justify-center">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={pieData}
+                  data={providerData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
+                  innerRadius={45}
+                  outerRadius={68}
                   paddingAngle={5}
                   dataKey="value"
                 >
-                  {pieData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={chartColors[index % chartColors.length]}
-                      stroke={colors.warmblack}
-                      strokeWidth={2}
-                    />
+                  {providerData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} stroke={colors.warmblack} strokeWidth={2} />
                   ))}
                 </Pie>
                 <Tooltip
@@ -384,21 +378,56 @@ export default function Reports() {
             </ResponsiveContainer>
           </div>
 
-          {/* Custom Pill Legend */}
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5">
-            {pieData.map((item, idx) => (
-              <div
-                key={idx}
-                className="flex items-center gap-2 p-2 rounded-xl bg-warmblack/60 border border-white/5 text-xs"
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: chartColors[idx % chartColors.length] }}
-                />
-                <span className="text-mutedgrey truncate">{item.name}</span>
-                <span className="font-mono font-bold text-ivory ml-auto">{item.value}</span>
+          <div className="space-y-1.5 pt-2 border-t border-white/5 text-xs">
+            {providerData.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between text-mutedgrey">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                  {item.name}
+                </span>
+                <span className="font-mono font-bold text-ivory">{item.value} calls</span>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Card 3: Automated Reminder Delivery */}
+        <div className="glass-panel p-6 rounded-3xl border border-graphite space-y-4 flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-emerald-400">
+              Outbound Dispatch
+            </span>
+            <h3 className="text-base font-bold text-ivory">Reminder Delivery & Confirmations</h3>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <div className="p-3 rounded-2xl bg-warmblack/60 border border-white/5 flex items-center justify-between">
+              <span className="text-xs text-mutedgrey">Total Scheduled Reminders</span>
+              <span className="text-base font-bold text-ivory font-mono">
+                {reminder_delivery?.total || 0}
+              </span>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-warmblack/60 border border-white/5 flex items-center justify-between">
+              <span className="text-xs text-mutedgrey">Successfully Dispatched</span>
+              <span className="text-base font-bold text-emerald-400 font-mono">
+                {reminder_delivery?.sent || 0}
+              </span>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-burnt/10 border border-burnt/30 flex items-center justify-between">
+              <span className="text-xs text-burnt">Patient Confirmations</span>
+              <span className="text-base font-bold text-burnt font-mono">
+                {reminder_delivery?.confirmed || 0} ({reminder_delivery?.confirmation_rate || 0}%)
+              </span>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-warmblack/60 border border-white/5 flex items-center justify-between">
+              <span className="text-xs text-mutedgrey">Pending / In-Queue</span>
+              <span className="text-base font-bold text-amber font-mono">
+                {reminder_delivery?.pending || 0}
+              </span>
+            </div>
           </div>
         </div>
       </div>

@@ -17,6 +17,7 @@ from app.core.config import settings
 settings.ENVIRONMENT = "test"
 
 from app.api.deps import get_db_session
+from app.core.security import create_access_token
 from app.database.base import Base
 from app.database.connection import get_db
 import app.models  # Ensure all model tables are registered in Base.metadata
@@ -77,3 +78,13 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         yield test_client
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_headers() -> dict[str, str]:
+    """Provide valid JWT bearer authorization headers for demo admin user."""
+    token = create_access_token(
+        subject="demo-user-admin",
+        extra_claims={"business_id": "demo-biz-vattara-health", "role": "admin"},
+    )
+    return {"Authorization": f"Bearer {token}"}

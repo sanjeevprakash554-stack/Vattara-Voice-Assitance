@@ -9,7 +9,12 @@ from app.api.deps import get_db_session
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.database.connection import engine, ping_database
-from app.schemas.health import DatabaseHealthResponse, HealthResponse
+from app.schemas.health import (
+    DatabaseHealthResponse,
+    HealthResponse,
+    TwilioHealthResponse,
+)
+from app.services.twilio_service import TwilioService, get_twilio_service
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -80,3 +85,49 @@ def get_database_health(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=failure_payload.model_dump(mode="json"),
         )
+
+
+@router.get(
+    "/twilio",
+    response_model=TwilioHealthResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        200: {
+            "model": TwilioHealthResponse,
+            "description": "Twilio configuration and connectivity status retrieved.",
+        },
+        503: {
+            "model": TwilioHealthResponse,
+            "description": "Twilio credentials configured but connection failed or invalid.",
+        },
+    },
+    summary="Twilio Health & Configuration Status",
+    description="Verify Twilio credentials, Account SID authentication, and configured phone numbers.",
+)
+def get_twilio_health(
+    twilio_service: TwilioService = Depends(get_twilio_service),
+) -> TwilioHealthResponse | JSONResponse:
+    """Verify Twilio telephony credentials and API connectivity."""
+    result = twilio_service.check_connection()
+    now = datetime.now(timezone.utc)
+
+    response_payload = TwilioHealthResponse(
+        status=result["status"],
+        configured=result["configured"],
+        account_sid_masked=result.get("account_sid_masked"),
+        account_name=result.get("account_name"),
+        account_status=result.get("account_status"),
+        phone_number=result.get("phone_number"),
+        public_base_url=result.get("public_base_url"),
+        details=result["details"],
+        timestamp=now,
+        error=result.get("error"),
+    )
+
+    if result["status"] == "error":
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=response_payload.model_dump(mode="json"),
+        )
+
+    return response_payload

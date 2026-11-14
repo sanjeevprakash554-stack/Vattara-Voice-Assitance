@@ -20,8 +20,8 @@ import WaveformVisualizer from '../../components/common/WaveformVisualizer';
 export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [email, setEmail] = useState('admin@vattara.com');
-  const [password, setPassword] = useState('Admin@123');
+  const [email, setEmail] = useState(import.meta.env.DEV ? 'admin@vattara.com' : '');
+  const [password, setPassword] = useState(import.meta.env.DEV ? 'Admin@123' : '');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -125,15 +125,17 @@ export default function Login() {
               <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber">
                 Console Access
               </span>
-              {/* Quick Fill Demo Button */}
-              <button
-                type="button"
-                onClick={handleFillDemo}
-                className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber/10 border border-amber/30 text-amber hover:bg-amber/20 transition-colors"
-                title="Autofill standard demo credentials"
-              >
-                Auto-fill Demo
-              </button>
+              {/* Quick Fill Demo Button (Development only) */}
+              {import.meta.env.DEV && (
+                <button
+                  type="button"
+                  onClick={handleFillDemo}
+                  className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber/10 border border-amber/30 text-amber hover:bg-amber/20 transition-colors"
+                  title="Autofill standard demo credentials"
+                >
+                  Auto-fill Demo
+                </button>
+              )}
             </div>
             <h3 className="text-2xl font-extrabold text-ivory tracking-tight">Sign in to your portal</h3>
             <p className="text-xs text-mutedgrey mt-1">

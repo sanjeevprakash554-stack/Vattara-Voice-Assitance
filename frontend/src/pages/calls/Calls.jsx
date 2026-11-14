@@ -26,9 +26,11 @@ import {
 import Badge from '../../components/common/Badge';
 import CallDetailModal from './CallDetailModal';
 import { callsService } from '../../services/api';
+import { useDashboardWebSocket } from '../../context/DashboardWebSocketContext';
 import confetti from 'canvas-confetti';
 
 export default function Calls() {
+  const { subscribe, isConnected } = useDashboardWebSocket();
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCall, setSelectedCall] = useState(null);
@@ -57,6 +59,36 @@ export default function Calls() {
   useEffect(() => {
     fetchCalls();
   }, [typeFilter, statusFilter]);
+
+  // Real-time WebSocket event listeners
+  useEffect(() => {
+    const unsubStart = subscribe('CALL_STARTED', (data) => {
+      const newCall = {
+        id: data?.call_id || `call-${Date.now()}`,
+        caller_name: data?.caller_name || 'Inbound Caller',
+        caller_phone: data?.caller_phone || 'Unknown Phone',
+        call_type: data?.call_type || 'incoming',
+        status: 'in-progress',
+        initiated_at: data?.start_time || new Date().toISOString(),
+        duration_seconds: 0,
+        summary: 'Active telephony conversation session in progress...',
+        transcript: '',
+      };
+      setCalls((prev) => [newCall, ...prev.filter((c) => c.id !== data?.call_id)]);
+    });
+
+    const unsubComplete = subscribe('CALL_COMPLETED', (data) => {
+      fetchCalls();
+      if (selectedCall && selectedCall.id === data?.call_id) {
+        callsService.getCall(data.call_id).then(setSelectedCall).catch(console.error);
+      }
+    });
+
+    return () => {
+      unsubStart();
+      unsubComplete();
+    };
+  }, [subscribe, selectedCall]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -113,9 +145,13 @@ export default function Calls() {
               <span className="text-xs font-semibold tracking-wider uppercase text-burnt">
                 Real-Time Telephony Console
               </span>
-              <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-medium bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                Live Dispatch Ready
+              <span className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-medium ${
+                isConnected
+                  ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400'
+                  : 'bg-amber-500/15 border border-amber-500/30 text-amber-400'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+                {isConnected ? 'Live Telemetry Active' : 'Connecting Telemetry...'}
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-ivory tracking-tight">

@@ -33,6 +33,10 @@ class Business(Base, TimestampMixin):
     calls = relationship("Call", back_populates="business", cascade="all, delete-orphan")
     appointments = relationship("Appointment", back_populates="business", cascade="all, delete-orphan")
     reminders = relationship("Reminder", back_populates="business", cascade="all, delete-orphan")
+    reminder_setting = relationship("ReminderSetting", back_populates="business", uselist=False, cascade="all, delete-orphan")
     services = relationship("Service", back_populates="business", cascade="all, delete-orphan")
     faqs = relationship("FAQ", back_populates="business", cascade="all, delete-orphan")
+    subscription = relationship("Subscription", back_populates="business", uselist=False, cascade="all, delete-orphan")
+    invoices = relationship("Invoice", back_populates="business", cascade="all, delete-orphan")
+    integrations = relationship("BusinessIntegration", back_populates="business", uselist=False, cascade="all, delete-orphan")
 

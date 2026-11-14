@@ -12,7 +12,7 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('vattara_token');
-    if (token) {
+    if (token && token !== 'demo_token' && !token.startsWith('mock_jwt_token')) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -121,20 +121,27 @@ function saveMockDb(db) {
 }
 
 // ------------------------------------------------------------------------------
-// Safe API Invocation Wrapper (Tries live backend first, falls back gracefully)
+// Safe API Invocation Wrapper
 // ------------------------------------------------------------------------------
+// Only enable mock fallback if explicitly requested via VITE_USE_MOCK_DATA=true
+const isExplicitDemoMode =
+  import.meta.env.VITE_USE_MOCK_DATA === 'true' ||
+  import.meta.env.VITE_ENABLE_MOCK_FALLBACK === 'true';
+
 async function safeApiCall(apiFn, mockFallbackFn) {
   try {
     const res = await apiFn();
     isUsingMockFallback.current = false;
     return res.data;
   } catch (err) {
-    // If backend is unreachable or CORS blocked, use realistic mock fallback
-    if (!err.response || err.code === 'ERR_NETWORK' || err.response.status >= 500) {
-      console.info('Live backend unreachable or server error, falling back to local mock client state.');
+    // Only fallback to mock database if explicit demo mode is set
+    if (isExplicitDemoMode && typeof mockFallbackFn === 'function') {
+      console.warn('[DemoMode] API request failed, falling back to mock state:', err?.message || err);
       isUsingMockFallback.current = true;
       return mockFallbackFn();
     }
+    // In normal / production mode: DO NOT mask errors with synthetic mock data!
+    // Throw error so callers can render authentic empty, loading, or connection-error states.
     throw err;
   }
 }
@@ -530,6 +537,191 @@ export const appointmentsService = {
       }
     );
   },
+
+  rescheduleAppointment: async (id, payload) => {
+    return safeApiCall(
+      () => api.post(`/appointments/${id}/reschedule`, payload),
+      () => {
+        const db = getMockDb();
+        const appt = db.appointments.find((a) => a.id === id);
+        if (appt) {
+          appt.appointment_time = payload.new_appointment_time;
+          appt.status = 'rescheduled';
+          if (payload.reason) appt.notes = `${appt.notes || ''} [Rescheduled: ${payload.reason}]`;
+          saveMockDb(db);
+        }
+        return appt;
+      }
+    );
+  },
+
+  getAvailableSlots: async (dateStr, serviceId = null, staffId = null) => {
+    const params = { date: dateStr };
+    if (serviceId) params.service_id = serviceId;
+    if (staffId) params.staff_id = staffId;
+    return safeApiCall(
+      () => api.get('/appointments/availability/slots', { params }),
+      () => {
+        // Realistic fallback mock slots
+        const slots = [];
+        const times = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
+        times.forEach((t, i) => {
+          const isAvail = i % 3 !== 0; // some slots booked
+          slots.push({
+            time: t,
+            start_time: `${dateStr}T${t}:00`,
+            end_time: `${dateStr}T${t}:30`,
+            duration_minutes: 30,
+            available: isAvail,
+            reason: isAvail ? null : 'Already booked',
+          });
+        });
+        return {
+          date: dateStr,
+          business_id: 'mock-biz',
+          timezone: 'Asia/Kolkata',
+          is_open: true,
+          operating_hours: { open: '09:00', close: '18:00', is_closed: false },
+          slots,
+          available_slots_count: slots.filter((s) => s.available).length,
+          total_slots_count: slots.length,
+        };
+      }
+    );
+  },
+
+  getOperatingHours: async () => {
+    return safeApiCall(
+      () => api.get('/appointments/operating-hours'),
+      () => ({
+        business_id: 'mock-biz',
+        timezone: 'Asia/Kolkata',
+        schedule: [
+          { day_of_week: 0, day_name: 'Monday', open_time: '08:30', close_time: '20:00', is_closed: false },
+          { day_of_week: 1, day_name: 'Tuesday', open_time: '08:30', close_time: '20:00', is_closed: false },
+          { day_of_week: 2, day_name: 'Wednesday', open_time: '08:30', close_time: '20:00', is_closed: false },
+          { day_of_week: 3, day_name: 'Thursday', open_time: '08:30', close_time: '20:00', is_closed: false },
+          { day_of_week: 4, day_name: 'Friday', open_time: '08:30', close_time: '20:00', is_closed: false },
+          { day_of_week: 5, day_name: 'Saturday', open_time: '09:00', close_time: '18:00', is_closed: false },
+          { day_of_week: 6, day_name: 'Sunday', open_time: '10:00', close_time: '14:00', is_closed: true },
+        ],
+      })
+    );
+  },
+
+  updateOperatingHours: async (schedule) => {
+    return safeApiCall(
+      () => api.put('/appointments/operating-hours', { schedule }),
+      () => ({ business_id: 'mock-biz', timezone: 'Asia/Kolkata', schedule })
+    );
+  },
+
+  getStaff: async () => {
+    return safeApiCall(
+      () => api.get('/appointments/staff'),
+      () => [
+        { id: 'staff-1', name: 'Dr. Rajesh Kumar', email: 'admin@vattara.com', role: 'admin', is_active: true },
+        { id: 'staff-2', name: 'Dr. Raghavan Cardiologist', email: 'raghavan@vattara.com', role: 'doctor', is_active: true },
+      ]
+    );
+  },
+};
+
+export const availabilityService = {
+  getFullConfig: async () => {
+    return safeApiCall(
+      () => api.get('/availability'),
+      () => ({
+        business_id: 'biz-mock',
+        timezone: 'Asia/Kolkata',
+        weekly_schedule: [
+          { day_of_week: 0, day_name: 'Monday', open_time: '09:00', close_time: '18:00', is_closed: false },
+          { day_of_week: 1, day_name: 'Tuesday', open_time: '09:00', close_time: '18:00', is_closed: false },
+          { day_of_week: 2, day_name: 'Wednesday', open_time: '09:00', close_time: '18:00', is_closed: false },
+          { day_of_week: 3, day_name: 'Thursday', open_time: '09:00', close_time: '18:00', is_closed: false },
+          { day_of_week: 4, day_name: 'Friday', open_time: '09:00', close_time: '18:00', is_closed: false },
+          { day_of_week: 5, day_name: 'Saturday', open_time: '09:00', close_time: '14:00', is_closed: false },
+          { day_of_week: 6, day_name: 'Sunday', open_time: '10:00', close_time: '14:00', is_closed: true },
+        ],
+        breaks: [
+          { id: 'brk-1', day_of_week: -1, start_time: '13:00', end_time: '14:00', description: 'Lunch Break', is_active: true }
+        ],
+        settings: {
+          default_duration_minutes: 30,
+          buffer_time_minutes: 10,
+          min_advance_hours: 2,
+          max_advance_days: 30,
+          same_day_booking: true,
+          slot_interval_minutes: 30,
+        },
+        holidays: [],
+        special_dates: [],
+      })
+    );
+  },
+
+  updateFullConfig: async (payload) => {
+    return safeApiCall(
+      () => api.put('/availability', payload),
+      () => payload
+    );
+  },
+
+  updateWeeklySchedule: async (schedule) => {
+    return safeApiCall(
+      () => api.put('/availability/weekly-schedule', { schedule }),
+      () => schedule
+    );
+  },
+
+  addBreak: async (data) => {
+    return safeApiCall(
+      () => api.post('/availability/breaks', data),
+      () => ({ id: 'brk-' + Date.now(), ...data })
+    );
+  },
+
+  deleteBreak: async (id) => {
+    return safeApiCall(
+      () => api.delete(`/availability/breaks/${id}`),
+      () => ({ success: true })
+    );
+  },
+
+  updateSettings: async (settings) => {
+    return safeApiCall(
+      () => api.put('/availability/settings', settings),
+      () => settings
+    );
+  },
+
+  addHoliday: async (data) => {
+    return safeApiCall(
+      () => api.post('/availability/holidays', data),
+      () => ({ id: 'hol-' + Date.now(), ...data })
+    );
+  },
+
+  deleteHoliday: async (id) => {
+    return safeApiCall(
+      () => api.delete(`/availability/holidays/${id}`),
+      () => ({ success: true })
+    );
+  },
+
+  addSpecialDate: async (data) => {
+    return safeApiCall(
+      () => api.post('/availability/special-dates', data),
+      () => ({ id: 'spd-' + Date.now(), ...data })
+    );
+  },
+
+  deleteSpecialDate: async (id) => {
+    return safeApiCall(
+      () => api.delete(`/availability/special-dates/${id}`),
+      () => ({ success: true })
+    );
+  },
 };
 
 export const customersService = {
@@ -648,12 +840,70 @@ export const remindersService = {
       }
     );
   },
+
+  getSettings: async () => {
+    return safeApiCall(
+      () => api.get('/reminders/settings'),
+      () => ({
+        id: 'mock-rem-set',
+        business_id: 'mock-biz',
+        reminder_intervals_hours: '24,2',
+        calling_start_time: '09:00',
+        calling_end_time: '20:00',
+        max_retries: 3,
+        retry_delay_minutes: 15,
+        is_enabled: true,
+        default_channel: 'voice',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+    );
+  },
+
+  updateSettings: async (data) => {
+    return safeApiCall(
+      () => api.put('/reminders/settings', data),
+      () => ({
+        id: 'mock-rem-set',
+        business_id: 'mock-biz',
+        reminder_intervals_hours: data.reminder_intervals_hours || '24,2',
+        calling_start_time: data.calling_start_time || '09:00',
+        calling_end_time: data.calling_end_time || '20:00',
+        max_retries: data.max_retries !== undefined ? data.max_retries : 3,
+        retry_delay_minutes: data.retry_delay_minutes || 15,
+        is_enabled: data.is_enabled !== undefined ? data.is_enabled : true,
+        default_channel: data.default_channel || 'voice',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+    );
+  },
+
+  processDue: async (params = {}) => {
+    return safeApiCall(
+      () => api.post('/reminders/process-due', null, { params }),
+      () => ({
+        processed_count: 2,
+        called_count: 2,
+        retried_count: 0,
+        deferred_count: 0,
+        failed_count: 0,
+        details: [
+          { reminder_id: 'rem-1', status: 'completed', response: 'confirm' },
+        ],
+      })
+    );
+  },
 };
 
 export const reportsService = {
-  getSummary: async (rangeType = '7d') => {
+  getSummary: async (rangeType = '7d', startDate = null, endDate = null) => {
+    let url = `/reports/summary?range_type=${rangeType}`;
+    if (startDate && endDate) {
+      url += `&start_date=${startDate}&end_date=${endDate}`;
+    }
     return safeApiCall(
-      () => api.get(`/reports/summary?range_type=${rangeType}`),
+      () => api.get(url),
       () => ({
         range_type: rangeType,
         metrics: {
@@ -669,6 +919,27 @@ export const reportsService = {
           cancelled_appointments: 3,
           upcoming_appointments: 4,
           appointment_fulfillment_rate: 83.3,
+          appointment_conversion_rate: 45.8,
+        },
+        duration_distribution: {
+          under_1_min: 8,
+          '1_to_3_mins': 22,
+          '3_to_5_mins': 12,
+          over_5_mins: 6,
+        },
+        provider_breakdown: {
+          twilio: 28,
+          smartflo: 14,
+          exotel: 6,
+        },
+        reminder_delivery: {
+          total: 22,
+          pending: 4,
+          sent: 16,
+          confirmed: 14,
+          failed: 1,
+          cancelled: 1,
+          confirmation_rate: 87.5,
         },
         timeline: [
           { date: 'Day 1', incoming: 6, outgoing: 2, missed: 1 },
@@ -688,7 +959,237 @@ export const reportsService = {
       })
     );
   },
+
+  exportCsv: async (reportType = 'calls') => {
+    const response = await api.get(`/reports/export-csv?report_type=${reportType}`, {
+      responseType: 'blob',
+    });
+    const blob = new Blob([response.data], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${reportType}_report_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+};
+
+export const superAdminService = {
+  getStats: async () => {
+    return safeApiCall(
+      () => api.get('/super-admin/stats'),
+      () => ({
+        total_businesses: 4,
+        active_businesses: 4,
+        total_users: 8,
+        total_calls: 156,
+        total_appointments: 68,
+        plan_distribution: { starter: 1, professional: 2, enterprise: 1 },
+      })
+    );
+  },
+
+  getBusinesses: async () => {
+    return safeApiCall(
+      () => api.get('/super-admin/businesses'),
+      () => [
+        {
+          id: 'demo-biz-1',
+          name: 'Vattara City Clinic & Diagnostics',
+          vertical: 'clinic',
+          phone: '+91 44 2828 9000',
+          email: 'contact@vattaraclinic.com',
+          is_active: true,
+          plan: 'professional',
+          total_staff: 2,
+          total_calls: 48,
+          total_appointments: 14,
+          created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
+        },
+      ]
+    );
+  },
+
+  toggleStatus: async (businessId) => {
+    return safeApiCall(
+      () => api.post(`/super-admin/businesses/${businessId}/toggle-status`),
+      () => ({ success: true, message: 'Status updated' })
+    );
+  },
+
+  updateSubscription: async (businessId, payload) => {
+    return safeApiCall(
+      () => api.put(`/super-admin/businesses/${businessId}/subscription`, payload),
+      () => ({ success: true, message: 'Subscription updated' })
+    );
+  },
+};
+
+export const subscriptionService = {
+  getCurrent: async () => {
+    return safeApiCall(
+      () => api.get('/subscriptions/current'),
+      () => ({
+        id: 'sub-mock-1',
+        plan: 'professional',
+        status: 'active',
+        billing_cycle: 'monthly',
+        max_staff: 5,
+        current_staff_count: 2,
+        max_monthly_call_minutes: 1500,
+        used_call_minutes: 320,
+        current_period_start: new Date(Date.now() - 86400000 * 15).toISOString(),
+        current_period_end: new Date(Date.now() + 86400000 * 15).toISOString(),
+        is_trial: false,
+      })
+    );
+  },
+
+  getPlans: async () => {
+    return safeApiCall(
+      () => api.get('/subscriptions/plans'),
+      () => [
+        {
+          id: 'starter',
+          name: 'Starter Plan',
+          monthly_price: 2499,
+          annual_price: 24990,
+          max_staff: 2,
+          max_monthly_call_minutes: 500,
+          features: ['1 Phone Number', 'OpenAI & Deterministic Voice AI', 'Standard Operating Hours', 'Email Reminders'],
+        },
+        {
+          id: 'professional',
+          name: 'Professional Plan',
+          monthly_price: 6999,
+          annual_price: 69990,
+          max_staff: 10,
+          max_monthly_call_minutes: 2000,
+          features: ['3 Phone Numbers', 'Deepgram STT & ElevenLabs TTS', 'Multi-staff Scheduling', 'Automated Outbound Voice Reminders', 'Analytics & CSV Export'],
+        },
+        {
+          id: 'enterprise',
+          name: 'Enterprise Plan',
+          monthly_price: 18999,
+          annual_price: 189990,
+          max_staff: 50,
+          max_monthly_call_minutes: 10000,
+          features: ['Unlimited Numbers', 'Dedicated Tata Smartflo SIP Trunk', 'Custom LLM Prompts & EMR Webhooks', 'Priority 24/7 SLA', 'Custom Regional Dialects'],
+        },
+      ]
+    );
+  },
+
+  changePlan: async (payload) => {
+    return safeApiCall(
+      () => api.post('/subscriptions/change-plan', payload),
+      () => ({ success: true, message: `Upgraded to ${payload.plan}` })
+    );
+  },
+
+  getInvoices: async () => {
+    return safeApiCall(
+      () => api.get('/subscriptions/invoices'),
+      () => [
+        {
+          id: 'inv-1',
+          invoice_number: 'INV-2026-001',
+          amount: 6999,
+          currency: 'INR',
+          status: 'paid',
+          billing_period_start: new Date(Date.now() - 86400000 * 30).toISOString(),
+          billing_period_end: new Date().toISOString(),
+          paid_at: new Date(Date.now() - 86400000 * 30).toISOString(),
+        },
+      ]
+    );
+  },
+};
+
+export const staffService = {
+  getStaff: async () => {
+    return safeApiCall(
+      () => api.get('/staff'),
+      () => [
+        {
+          id: 'user-1',
+          full_name: 'Dr. Rajesh Kumar',
+          email: 'admin@vattara.com',
+          role: 'doctor',
+          is_active: true,
+          created_at: new Date().toISOString(),
+        },
+      ]
+    );
+  },
+
+  createStaff: async (payload) => {
+    return safeApiCall(
+      () => api.post('/staff', payload),
+      () => ({ id: 'user-' + Date.now(), is_active: true, ...payload })
+    );
+  },
+
+  updateStaff: async (id, payload) => {
+    return safeApiCall(
+      () => api.put(`/staff/${id}`, payload),
+      () => ({ id, ...payload })
+    );
+  },
+
+  deleteStaff: async (id) => {
+    return safeApiCall(
+      () => api.delete(`/staff/${id}`),
+      () => ({ success: true })
+    );
+  },
+};
+
+export const integrationsService = {
+  getSettings: async () => {
+    return safeApiCall(
+      () => api.get('/integrations/settings'),
+      () => ({
+        primary_provider: 'plivo',
+        plivo_auth_id: 'MAMOCK••••••••12345',
+        plivo_phone_number: '+918040001234',
+        is_plivo_verified: true,
+        twilio_account_sid: 'ACmo••••••••9000',
+        twilio_phone_number: '+14155552671',
+        is_twilio_verified: true,
+        smartflo_caller_id: '918040001234',
+        smartflo_api_key: 'tsf_••••••••abcd',
+        is_smartflo_verified: true,
+        exotel_sid: 'ex_••••••••9999',
+        exotel_caller_id: '08088887777',
+        is_exotel_verified: false,
+        inbound_webhook_url: 'https://api.vattara.com/api/v1/plivo/incoming',
+      })
+    );
+  },
+
+  updateSettings: async (payload) => {
+    return safeApiCall(
+      () => api.put('/integrations/settings', payload),
+      () => ({ success: true, ...payload })
+    );
+  },
+
+  testConnection: async (payload) => {
+    return safeApiCall(
+      () => api.post('/integrations/test-connection', payload),
+      () => ({
+        provider: payload.provider,
+        status: 'connected',
+        latency_ms: 142,
+        message: `${payload.provider} trunk ping successful. Gateway reachable.`,
+      })
+    );
+  },
 };
 
 export default api;
+
 

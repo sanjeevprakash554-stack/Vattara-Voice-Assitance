@@ -9,6 +9,7 @@ from app.models.call import Call
 from app.models.customer import Customer
 from app.models.user import User
 from app.schemas.call import CallCreate, CallResponse, CallSimulateRequest
+from app.services.dashboard_events import dashboard_event_manager
 
 router = APIRouter()
 
@@ -114,6 +115,51 @@ def simulate_call(
     db.commit()
     db.refresh(call)
 
+    # Broadcast real-time events for simulated call
+    dashboard_event_manager.dispatch(
+        business_id=current_user.business_id,
+        event_type="CALL_STARTED",
+        data={
+            "call_id": call.id,
+            "caller_phone": call.caller_phone,
+            "caller_name": call.caller_name,
+            "status": "in_progress",
+            "call_type": call.call_type,
+            "started_at": call.initiated_at.isoformat(),
+        },
+    )
+    dashboard_event_manager.dispatch(
+        business_id=current_user.business_id,
+        event_type="TRANSCRIPT_RECEIVED",
+        data={
+            "call_id": call.id,
+            "speaker": "caller",
+            "text": f"Hi, I'm calling regarding {payload.scenario}.",
+            "timestamp": call.initiated_at.isoformat(),
+        },
+    )
+    dashboard_event_manager.dispatch(
+        business_id=current_user.business_id,
+        event_type="AI_RESPONSE_GENERATED",
+        data={
+            "call_id": call.id,
+            "speaker": "assistant",
+            "text": f"Certainly! I would be delighted to help you with {payload.scenario}.",
+            "timestamp": call.initiated_at.isoformat(),
+        },
+    )
+    dashboard_event_manager.dispatch(
+        business_id=current_user.business_id,
+        event_type="CALL_COMPLETED",
+        data={
+            "call_id": call.id,
+            "status": "completed",
+            "duration_seconds": call.duration_seconds,
+            "summary": call.summary,
+            "ended_at": call.ended_at.isoformat() if call.ended_at else None,
+        },
+    )
+
     return CallResponse.model_validate(call)
 
 
@@ -141,5 +187,18 @@ def create_call(
     db.add(call)
     db.commit()
     db.refresh(call)
+
+    dashboard_event_manager.dispatch(
+        business_id=current_user.business_id,
+        event_type="CALL_COMPLETED" if call.status == "completed" else "CALL_STARTED",
+        data={
+            "call_id": call.id,
+            "caller_phone": call.caller_phone,
+            "caller_name": call.caller_name,
+            "status": call.status,
+            "call_type": call.call_type,
+            "duration_seconds": call.duration_seconds,
+        },
+    )
     return CallResponse.model_validate(call)
 

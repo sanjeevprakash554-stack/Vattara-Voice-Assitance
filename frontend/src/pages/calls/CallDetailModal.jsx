@@ -17,19 +17,23 @@ import {
 import Modal from '../../components/common/Modal';
 import Badge from '../../components/common/Badge';
 import WaveformVisualizer from '../../components/common/WaveformVisualizer';
+import { useDashboardWebSocket } from '../../context/DashboardWebSocketContext';
 
 export default function CallDetailModal({ isOpen, onClose, call, onScheduleFollowup }) {
+  const { liveTranscripts } = useDashboardWebSocket();
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(35);
 
   if (!call) return null;
 
+  const streamingTurns = (call?.id && liveTranscripts?.[call.id]) || [];
+
   const toggleAudio = () => {
     setIsPlaying(!isPlaying);
   };
 
-  const minutes = Math.floor(call.duration_seconds / 60);
-  const seconds = call.duration_seconds % 60;
+  const minutes = Math.floor((call.duration_seconds || 0) / 60);
+  const seconds = (call.duration_seconds || 0) % 60;
   const formattedDuration = `${minutes}m ${seconds}s`;
 
   return (
@@ -39,11 +43,32 @@ export default function CallDetailModal({ isOpen, onClose, call, onScheduleFollo
         <div className="p-5 rounded-3xl glass-card border border-ivory/10 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 mb-1.5">
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                 <Badge status={call.call_type} text={`${call.call_type} Call`} />
                 <Badge status={call.status} />
+                {/[\u0C00-\u0C7F]/.test(call.transcript || '') ? (
+                  <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold">
+                    Telugu (తెలుగు)
+                  </span>
+                ) : /namaskaram|cheppandi|appointment|kavali|repu|chudali/i.test(call.transcript || '') ? (
+                  <span className="text-[10px] font-mono text-teal-300 bg-teal-950/60 px-2 py-0.5 rounded-full border border-teal-500/30 font-bold">
+                    Teluglish (తెలుగు + Eng)
+                  </span>
+                ) : /[\u0B80-\u0BFF]/.test(call.transcript || '') ? (
+                  <span className="text-[10px] font-mono text-purple-300 bg-purple-950/60 px-2 py-0.5 rounded-full border border-purple-500/30 font-bold">
+                    Tamil (தமிழ்)
+                  </span>
+                ) : /vanakkam|nandri|parkanum|naalaiki|venum|pannanum|iruka/i.test(call.transcript || '') ? (
+                  <span className="text-[10px] font-mono text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-500/30 font-bold">
+                    Tanglish (தமிழ் + Eng)
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono text-sky-300 bg-sky-950/60 px-2 py-0.5 rounded-full border border-sky-500/30 font-bold">
+                    English (India)
+                  </span>
+                )}
                 <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold">
-                  98% Sentiment Positive
+                  AI Conversational Engine
                 </span>
               </div>
               <h3 className="text-lg font-extrabold text-ivory">
@@ -119,11 +144,42 @@ export default function CallDetailModal({ isOpen, onClose, call, onScheduleFollo
 
         {/* Timestamped Transcript */}
         <div className="space-y-2">
-          <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-mutedgrey flex items-center gap-1.5">
-            <FileText className="w-4 h-4 text-burnt" /> Conversational Transcript
-          </h4>
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-mutedgrey flex items-center gap-1.5">
+              <FileText className="w-4 h-4 text-burnt" /> Conversational Transcript
+            </h4>
+            {streamingTurns.length > 0 && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                Live Audio Stream Turns
+              </span>
+            )}
+          </div>
+
           <div className="p-5 rounded-2xl bg-charcoal border border-ivory/10 space-y-3 max-h-64 overflow-y-auto font-mono text-xs">
-            {call.transcript ? (
+            {streamingTurns.length > 0 ? (
+              streamingTurns.map((turn, idx) => {
+                const isAssistant = turn.speaker === 'assistant';
+                return (
+                  <div
+                    key={`stream-${idx}`}
+                    className={`p-2.5 rounded-xl ${
+                      isAssistant ? 'bg-burnt/10 border border-burnt/20 text-burnt-light' : 'bg-graphite text-ivory'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="font-bold uppercase tracking-wider text-[10px] opacity-70">
+                        {isAssistant ? '🤖 Vattara AI Voice Agent' : '👤 Caller'}
+                      </span>
+                      <span className="text-[9px] opacity-50">
+                        {new Date(turn.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </span>
+                    </div>
+                    {turn.text}
+                  </div>
+                );
+              })
+            ) : call.transcript ? (
               call.transcript.split('\n').map((line, idx) => {
                 const isAi = line.startsWith('AI:');
                 return (

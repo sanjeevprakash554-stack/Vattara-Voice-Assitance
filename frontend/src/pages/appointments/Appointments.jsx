@@ -27,9 +27,11 @@ import {
 import Badge from '../../components/common/Badge';
 import Modal from '../../components/common/Modal';
 import { appointmentsService, customersService, assistantService } from '../../services/api';
+import { useDashboardWebSocket } from '../../context/DashboardWebSocketContext';
 import confetti from 'canvas-confetti';
 
 export default function Appointments() {
+  const { subscribe, isConnected } = useDashboardWebSocket();
   const [appointments, setAppointments] = useState([]);
   const [services, setServices] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -38,35 +40,81 @@ export default function Appointments() {
   const [viewMode, setViewMode] = useState('agenda'); // 'agenda' or 'grid'
   const [selectedDate, setSelectedDate] = useState(new Date());
 
-  // New Appointment Modal
+  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  const [staffList, setStaffList] = useState([]);
+
+  // New Appointment Modal & Slot Availability
   const [createModal, setCreateModal] = useState(false);
+  const [bookingDate, setBookingDate] = useState(tomorrowStr);
+  const [slotsData, setSlotsData] = useState({ is_open: true, slots: [], available_slots_count: 0 });
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [bookingError, setBookingError] = useState(null);
   const [newAppt, setNewAppt] = useState({
     customer_name: '',
     customer_phone: '',
     service_id: '',
+    staff_id: '',
     appointment_time: '',
     notes: '',
     source: 'dashboard',
   });
 
-  // Reschedule Modal
+  // Reschedule Modal & Slot Availability
   const [rescheduleModal, setRescheduleModal] = useState(false);
   const [selectedAppt, setSelectedAppt] = useState(null);
+  const [rescheduleDate, setRescheduleDate] = useState(tomorrowStr);
+  const [rescheduleSlots, setRescheduleSlots] = useState({ is_open: true, slots: [] });
+  const [rescheduleLoading, setRescheduleLoading] = useState(false);
+  const [rescheduleReason, setRescheduleReason] = useState('');
+  const [rescheduleError, setRescheduleError] = useState(null);
   const [newTime, setNewTime] = useState('');
+
+  const loadSlots = async (dateStr, serviceId, staffId) => {
+    if (!dateStr) return;
+    setSlotsLoading(true);
+    setBookingError(null);
+    try {
+      const res = await appointmentsService.getAvailableSlots(dateStr, serviceId || null, staffId || null);
+      setSlotsData(res || { is_open: false, slots: [] });
+    } catch (err) {
+      console.error('Failed to load slots:', err);
+      setSlotsData({ is_open: false, slots: [] });
+    } finally {
+      setSlotsLoading(false);
+    }
+  };
+
+  const loadRescheduleSlots = async (dateStr, serviceId, staffId) => {
+    if (!dateStr) return;
+    setRescheduleLoading(true);
+    setRescheduleError(null);
+    try {
+      const res = await appointmentsService.getAvailableSlots(dateStr, serviceId || null, staffId || null);
+      setRescheduleSlots(res || { is_open: false, slots: [] });
+    } catch (err) {
+      console.error('Failed to load reschedule slots:', err);
+      setRescheduleSlots({ is_open: false, slots: [] });
+    } finally {
+      setRescheduleLoading(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
     try {
       const params = {};
       if (statusFilter !== 'all') params.status = statusFilter;
-      const [apptsData, srvData, custData] = await Promise.all([
+      const [apptsData, srvData, custData, staffData] = await Promise.all([
         appointmentsService.getAppointments(params),
         assistantService.getServices(),
         customersService.getCustomers(),
+        appointmentsService.getStaff(),
       ]);
       setAppointments(apptsData);
       setServices(srvData);
       setCustomers(custData);
+      setStaffList(staffData || []);
     } catch (err) {
       console.error('Failed to load appointments:', err);
     } finally {
@@ -78,8 +126,43 @@ export default function Appointments() {
     loadData();
   }, [statusFilter]);
 
+  // Real-time WebSocket event listeners
+  useEffect(() => {
+    const unsubCreated = subscribe('APPOINTMENT_CREATED', () => {
+      loadData();
+    });
+    const unsubUpdated = subscribe('APPOINTMENT_UPDATED', () => {
+      loadData();
+    });
+    return () => {
+      unsubCreated();
+      unsubUpdated();
+    };
+  }, [subscribe]);
+
+  const handleOpenCreateModal = () => {
+    setBookingError(null);
+    setSelectedSlot(null);
+    setCreateModal(true);
+    loadSlots(bookingDate, newAppt.service_id, newAppt.staff_id);
+  };
+
+  const handleOpenRescheduleModal = (appt) => {
+    setSelectedAppt(appt);
+    setNewTime('');
+    setRescheduleError(null);
+    setRescheduleReason('');
+    setRescheduleModal(true);
+    loadRescheduleSlots(rescheduleDate, appt.service_id, appt.staff_id);
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
+    setBookingError(null);
+    if (!newAppt.appointment_time) {
+      setBookingError('Please select an available time slot from the schedule.');
+      return;
+    }
     try {
       await appointmentsService.createAppointment({
         ...newAppt,
@@ -97,24 +180,31 @@ export default function Appointments() {
         customer_name: '',
         customer_phone: '',
         service_id: '',
+        staff_id: '',
         appointment_time: '',
         notes: '',
         source: 'dashboard',
       });
+      setSelectedSlot(null);
       await loadData();
     } catch (err) {
       console.error(err);
-      alert('Failed to book appointment. Please verify details.');
+      const msg = err.response?.data?.detail || 'Failed to book appointment. Please verify details.';
+      setBookingError(msg);
     }
   };
 
   const handleReschedule = async (e) => {
     e.preventDefault();
-    if (!selectedAppt || !newTime) return;
+    if (!selectedAppt || !newTime) {
+      setRescheduleError('Please choose an available time slot.');
+      return;
+    }
+    setRescheduleError(null);
     try {
-      await appointmentsService.updateAppointment(selectedAppt.id, {
-        appointment_time: new Date(newTime).toISOString(),
-        status: 'rescheduled',
+      await appointmentsService.rescheduleAppointment(selectedAppt.id, {
+        new_appointment_time: new Date(newTime).toISOString(),
+        reason: rescheduleReason || 'Customer requested reschedule',
       });
       confetti({
         particleCount: 40,
@@ -123,9 +213,13 @@ export default function Appointments() {
       });
       setRescheduleModal(false);
       setSelectedAppt(null);
+      setNewTime('');
+      setRescheduleReason('');
       await loadData();
     } catch (err) {
       console.error(err);
+      const msg = err.response?.data?.detail || 'Failed to reschedule appointment.';
+      setRescheduleError(msg);
     }
   };
 
@@ -189,8 +283,13 @@ export default function Appointments() {
               <span className="text-xs font-semibold tracking-wider uppercase text-burnt">
                 Calendar & Dispatch Agenda
               </span>
-              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-amber/15 border border-amber/30 text-amber">
-                <Clock className="w-3 h-3" /> Realtime Slot Sync
+              <span className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono ${
+                isConnected
+                  ? 'bg-amber/15 border border-amber/30 text-amber'
+                  : 'bg-mutedgrey/10 border border-mutedgrey/20 text-mutedgrey'
+              }`}>
+                <Clock className="w-3 h-3" />
+                {isConnected ? 'Realtime Slot Sync' : 'Sync Paused'}
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-ivory tracking-tight">
@@ -205,7 +304,7 @@ export default function Appointments() {
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center gap-3">
             <button
-              onClick={() => setCreateModal(true)}
+              onClick={handleOpenCreateModal}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-burnt to-amber text-warmblack font-bold text-xs flex items-center gap-2 shadow-lg shadow-burnt/20 hover:shadow-burnt/40 hover:scale-[1.02] active:scale-[0.98] transition-all"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -404,7 +503,7 @@ export default function Appointments() {
             switch filters to view other slots.
           </p>
           <button
-            onClick={() => setCreateModal(true)}
+            onClick={handleOpenCreateModal}
             className="px-5 py-2.5 rounded-xl bg-burnt hover:bg-burnt/90 text-warmblack font-bold text-xs transition-colors inline-flex items-center gap-2"
           >
             <Plus className="w-3.5 h-3.5" /> Schedule New
@@ -489,10 +588,7 @@ export default function Appointments() {
                       </button>
 
                       <button
-                        onClick={() => {
-                          setSelectedAppt(appt);
-                          setRescheduleModal(true);
-                        }}
+                        onClick={() => handleOpenRescheduleModal(appt)}
                         className="px-3 py-1.5 rounded-xl bg-warmblack hover:bg-graphite border border-graphite text-ivory text-xs font-semibold flex items-center gap-1 transition-all"
                         title="Reschedule"
                       >
@@ -568,10 +664,7 @@ export default function Appointments() {
                   {appt.status !== 'completed' && appt.status !== 'cancelled' ? (
                     <>
                       <button
-                        onClick={() => {
-                          setSelectedAppt(appt);
-                          setRescheduleModal(true);
-                        }}
+                        onClick={() => handleOpenRescheduleModal(appt)}
                         className="text-xs text-amber hover:text-amber/80 font-semibold flex items-center gap-1"
                       >
                         <RotateCcw className="w-3 h-3" /> Reschedule
@@ -606,70 +699,169 @@ export default function Appointments() {
         </div>
       )}
 
-      {/* New Appointment Modal */}
+      {/* New Appointment Modal with Live Slot Availability */}
       <Modal
         isOpen={createModal}
         onClose={() => setCreateModal(false)}
         title="Schedule New Appointment"
       >
         <form onSubmit={handleCreate} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider mb-1.5">
-              Customer Full Name
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Rachel Adams"
-              value={newAppt.customer_name}
-              onChange={(e) => setNewAppt({ ...newAppt, customer_name: e.target.value })}
-              className="glass-input w-full"
-            />
+          {bookingError && (
+            <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium">
+              {bookingError}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider mb-1.5">
+                Customer Name
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Rachel Adams"
+                value={newAppt.customer_name}
+                onChange={(e) => setNewAppt({ ...newAppt, customer_name: e.target.value })}
+                className="glass-input w-full"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider mb-1.5">
+                Customer Phone
+              </label>
+              <input
+                type="tel"
+                required
+                placeholder="+91 98401 23456"
+                value={newAppt.customer_phone}
+                onChange={(e) => setNewAppt({ ...newAppt, customer_phone: e.target.value })}
+                className="glass-input w-full font-mono"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider mb-1.5">
+                Service / Procedure
+              </label>
+              <select
+                value={newAppt.service_id}
+                onChange={(e) => {
+                  const sId = e.target.value;
+                  setNewAppt({ ...newAppt, service_id: sId, appointment_time: '' });
+                  setSelectedSlot(null);
+                  loadSlots(bookingDate, sId, newAppt.staff_id);
+                }}
+                className="glass-input w-full"
+              >
+                <option value="">General Consultation (30 mins)</option>
+                {services.map((srv) => (
+                  <option key={srv.id} value={srv.id}>
+                    {srv.name} ({srv.duration_minutes || 30} mins)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider mb-1.5">
+                Provider / Doctor
+              </label>
+              <select
+                value={newAppt.staff_id || ''}
+                onChange={(e) => {
+                  const stId = e.target.value || '';
+                  setNewAppt({ ...newAppt, staff_id: stId, appointment_time: '' });
+                  setSelectedSlot(null);
+                  loadSlots(bookingDate, newAppt.service_id, stId);
+                }}
+                className="glass-input w-full"
+              >
+                <option value="">Any Available Staff</option>
+                {staffList.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name} ({st.role})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider mb-1.5">
-              Customer Phone Number
+              Appointment Date
             </label>
             <input
-              type="tel"
+              type="date"
               required
-              placeholder="+1 (555) 012-3456"
-              value={newAppt.customer_phone}
-              onChange={(e) => setNewAppt({ ...newAppt, customer_phone: e.target.value })}
-              className="glass-input w-full font-mono"
+              value={bookingDate}
+              onChange={(e) => {
+                setBookingDate(e.target.value);
+                setNewAppt({ ...newAppt, appointment_time: '' });
+                setSelectedSlot(null);
+                loadSlots(e.target.value, newAppt.service_id, newAppt.staff_id);
+              }}
+              className="glass-input w-full font-mono text-xs"
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider mb-1.5">
-              Service / Procedure
-            </label>
-            <select
-              value={newAppt.service_id}
-              onChange={(e) => setNewAppt({ ...newAppt, service_id: e.target.value })}
-              className="glass-input w-full"
-            >
-              <option value="">Select Service (or General Consultation)</option>
-              {services.map((srv) => (
-                <option key={srv.id} value={srv.id}>
-                  {srv.name} ({srv.duration_minutes || 30} mins)
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Slot Picker Component */}
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider">
+                Select Time Slot {slotsData.is_open && slotsData.available_slots_count ? `(${slotsData.available_slots_count} available)` : ''}
+              </label>
+              {slotsData.timezone && (
+                <span className="text-[10px] text-mutedgrey font-mono">
+                  {slotsData.timezone}
+                </span>
+              )}
+            </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider mb-1.5">
-              Date & Time Slot
-            </label>
-            <input
-              type="datetime-local"
-              required
-              value={newAppt.appointment_time}
-              onChange={(e) => setNewAppt({ ...newAppt, appointment_time: e.target.value })}
-              className="glass-input w-full font-mono"
-            />
+            {slotsLoading ? (
+              <div className="p-4 rounded-xl bg-graphite/40 border border-white/5 text-center text-xs text-mutedgrey animate-pulse">
+                Calculating available slots...
+              </div>
+            ) : !slotsData.is_open ? (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs text-center font-medium">
+                Business / Provider is closed on this day. Please select another date.
+              </div>
+            ) : slotsData.slots && slotsData.slots.length > 0 ? (
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-44 overflow-y-auto p-1.5 rounded-xl bg-graphite/30 border border-white/5">
+                {slotsData.slots.map((slot) => {
+                  const isSelected = newAppt.appointment_time === slot.start_time;
+                  return (
+                    <button
+                      key={slot.time}
+                      type="button"
+                      disabled={!slot.available}
+                      onClick={() => {
+                        setNewAppt({ ...newAppt, appointment_time: slot.start_time });
+                        setSelectedSlot(slot);
+                        setBookingError(null);
+                      }}
+                      title={slot.reason || 'Click to select slot'}
+                      className={`py-2 px-1 rounded-lg text-xs font-mono font-medium transition-all text-center border ${
+                        isSelected
+                          ? 'bg-amber text-warmblack font-bold border-amber shadow-md shadow-amber/30 scale-105'
+                          : slot.available
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                          : 'bg-white/5 border-white/5 text-mutedgrey/30 cursor-not-allowed line-through'
+                      }`}
+                    >
+                      {slot.time}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl bg-graphite/30 text-center text-xs text-mutedgrey">
+                No slots configured for this day.
+              </div>
+            )}
           </div>
 
           <div>
@@ -678,7 +870,7 @@ export default function Appointments() {
             </label>
             <textarea
               rows={2}
-              placeholder="First-time visitor, requested Dr. Lee if available..."
+              placeholder="First-time visitor, requested routine checkup..."
               value={newAppt.notes}
               onChange={(e) => setNewAppt({ ...newAppt, notes: e.target.value })}
               className="glass-input w-full text-xs resize-none"
@@ -695,7 +887,8 @@ export default function Appointments() {
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-burnt to-amber text-warmblack font-bold text-xs shadow-lg shadow-burnt/20 hover:scale-[1.02] transition-all"
+              disabled={!newAppt.appointment_time}
+              className="px-5 py-2 rounded-xl bg-gradient-to-r from-burnt to-amber text-warmblack font-bold text-xs shadow-lg shadow-burnt/20 hover:scale-[1.02] disabled:opacity-40 disabled:hover:scale-100 transition-all"
             >
               Confirm Booking
             </button>
@@ -703,29 +896,107 @@ export default function Appointments() {
         </form>
       </Modal>
 
-      {/* Reschedule Modal */}
+      {/* Reschedule Modal with Live Slot Calculation */}
       <Modal
         isOpen={rescheduleModal}
         onClose={() => setRescheduleModal(false)}
         title="Reschedule Appointment"
       >
         <form onSubmit={handleReschedule} className="space-y-4">
+          {rescheduleError && (
+            <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium">
+              {rescheduleError}
+            </div>
+          )}
+
           <p className="text-xs text-mutedgrey">
-            Rescheduling slot for{' '}
-            <strong className="text-ivory">{selectedAppt?.customer_name}</strong>. The customer will
-            receive an automatic SMS / Voice confirmation.
+            Rescheduling booking for{' '}
+            <strong className="text-ivory">{selectedAppt?.customer?.name || selectedAppt?.customer_name || 'Customer'}</strong>.
+            The client will receive an automated notification.
           </p>
 
           <div>
             <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider mb-1.5">
-              New Date & Time
+              Select New Date
             </label>
             <input
-              type="datetime-local"
+              type="date"
               required
-              value={newTime}
-              onChange={(e) => setNewTime(e.target.value)}
-              className="glass-input w-full font-mono"
+              value={rescheduleDate}
+              onChange={(e) => {
+                setRescheduleDate(e.target.value);
+                setNewTime('');
+                loadRescheduleSlots(e.target.value, selectedAppt?.service_id, selectedAppt?.staff_id);
+              }}
+              className="glass-input w-full font-mono text-xs"
+            />
+          </div>
+
+          {/* Reschedule Slot Picker */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider">
+                Select Available Slot
+              </label>
+              {rescheduleSlots.timezone && (
+                <span className="text-[10px] text-mutedgrey font-mono">
+                  {rescheduleSlots.timezone}
+                </span>
+              )}
+            </div>
+
+            {rescheduleLoading ? (
+              <div className="p-3 rounded-xl bg-graphite/40 border border-white/5 text-center text-xs text-mutedgrey animate-pulse">
+                Fetching open slots...
+              </div>
+            ) : !rescheduleSlots.is_open ? (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs text-center font-medium">
+                Clinic is closed on this date.
+              </div>
+            ) : rescheduleSlots.slots && rescheduleSlots.slots.length > 0 ? (
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-40 overflow-y-auto p-1.5 rounded-xl bg-graphite/30 border border-white/5">
+                {rescheduleSlots.slots.map((slot) => {
+                  const isSelected = newTime === slot.start_time;
+                  return (
+                    <button
+                      key={slot.time}
+                      type="button"
+                      disabled={!slot.available}
+                      onClick={() => {
+                        setNewTime(slot.start_time);
+                        setRescheduleError(null);
+                      }}
+                      title={slot.reason || 'Available slot'}
+                      className={`py-2 px-1 rounded-lg text-xs font-mono font-medium transition-all text-center border ${
+                        isSelected
+                          ? 'bg-amber text-warmblack font-bold border-amber shadow-md shadow-amber/30 scale-105'
+                          : slot.available
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                          : 'bg-white/5 border-white/5 text-mutedgrey/30 cursor-not-allowed line-through'
+                      }`}
+                    >
+                      {slot.time}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl bg-graphite/30 text-center text-xs text-mutedgrey">
+                No slots found for this day.
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-mutedgrey uppercase tracking-wider mb-1.5">
+              Reason for Reschedule
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Patient travel conflict, Doctor requested change"
+              value={rescheduleReason}
+              onChange={(e) => setRescheduleReason(e.target.value)}
+              className="glass-input w-full text-xs"
             />
           </div>
 
@@ -739,7 +1010,8 @@ export default function Appointments() {
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-burnt text-warmblack font-bold text-xs shadow-lg shadow-burnt/20 hover:scale-[1.02] transition-all"
+              disabled={!newTime}
+              className="px-5 py-2 rounded-xl bg-burnt text-warmblack font-bold text-xs shadow-lg shadow-burnt/20 hover:scale-[1.02] disabled:opacity-40 disabled:hover:scale-100 transition-all"
             >
               Update Schedule
             </button>

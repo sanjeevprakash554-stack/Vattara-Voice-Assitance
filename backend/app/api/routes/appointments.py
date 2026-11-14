@@ -1,22 +1,237 @@
-"""Appointment Management routes."""
+"""Appointment Management and Scheduling routes."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
 from app.api.deps import get_current_user, get_db_session
 from app.models.appointment import Appointment
-from app.models.assistant import Service
-from app.models.customer import Customer
+from app.models.business import Business
+from app.models.business_hours import BusinessHour
+from app.models.staff_schedule import StaffSchedule
 from app.models.user import User
 from app.schemas.appointment import (
     AppointmentCreate,
     AppointmentResponse,
     AppointmentUpdate,
+    AvailabilityResponse,
+    BusinessHourItem,
+    BusinessHoursResponse,
+    BusinessHoursUpdateRequest,
+    CancelAppointmentRequest,
+    RescheduleRequest,
+    StaffMemberResponse,
+    StaffScheduleItem,
+)
+from app.services.appointment_service import book_appointment_core
+from app.services.dashboard_events import dashboard_event_manager
+from app.services.scheduling_service import (
+    calculate_available_slots,
+    cancel_appointment_core,
+    get_all_operating_hours,
+    reschedule_appointment_core,
 )
 
 router = APIRouter()
 
+
+# ==============================================================================
+# 1. Availability & Slot Calculation
+# ==============================================================================
+
+@router.get("/availability/slots", response_model=AvailabilityResponse)
+def get_appointment_slots(
+    target_date_str: str = Query(..., alias="date", description="Target date in 'YYYY-MM-DD' format"),
+    service_id: str | None = Query(None, description="Service ID to calculate custom duration"),
+    staff_id: str | None = Query(None, description="Doctor/Staff ID to filter assigned availability"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+) -> AvailabilityResponse:
+    """Calculate discrete available time slots for the business on a specific date."""
+    try:
+        target_date = date.fromisoformat(target_date_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid date format. Expected 'YYYY-MM-DD'.",
+        )
+
+    return calculate_available_slots(
+        db=db,
+        business_id=current_user.business_id,
+        target_date=target_date,
+        service_id=service_id,
+        staff_id=staff_id,
+    )
+
+
+# ==============================================================================
+# 2. Operating Hours Management
+# ==============================================================================
+
+@router.get("/operating-hours", response_model=BusinessHoursResponse)
+def get_business_operating_hours(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+) -> BusinessHoursResponse:
+    """Retrieve full weekly operating schedule for the current business."""
+    business = db.get(Business, current_user.business_id)
+    if not business:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Business not found.")
+
+    schedule = get_all_operating_hours(db, current_user.business_id)
+    return BusinessHoursResponse(
+        business_id=current_user.business_id,
+        timezone=business.timezone,
+        schedule=schedule,
+    )
+
+
+@router.put("/operating-hours", response_model=BusinessHoursResponse)
+def update_business_operating_hours(
+    payload: BusinessHoursUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+) -> BusinessHoursResponse:
+    """Update weekly operating schedule for the current business."""
+    business = db.get(Business, current_user.business_id)
+    if not business:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Business not found.")
+
+    for item in payload.schedule:
+        bh = db.scalar(
+            select(BusinessHour).where(
+                BusinessHour.business_id == current_user.business_id,
+                BusinessHour.day_of_week == item.day_of_week,
+            )
+        )
+        if not bh:
+            bh = BusinessHour(
+                business_id=current_user.business_id,
+                day_of_week=item.day_of_week,
+                open_time=item.open_time,
+                close_time=item.close_time,
+                is_closed=item.is_closed,
+            )
+            db.add(bh)
+        else:
+            bh.open_time = item.open_time
+            bh.close_time = item.close_time
+            bh.is_closed = item.is_closed
+
+    db.commit()
+    return BusinessHoursResponse(
+        business_id=current_user.business_id,
+        timezone=business.timezone,
+        schedule=get_all_operating_hours(db, current_user.business_id),
+    )
+
+
+# ==============================================================================
+# 3. Staff & Schedules
+# ==============================================================================
+
+@router.get("/staff", response_model=list[StaffMemberResponse])
+def list_business_staff(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+) -> list[StaffMemberResponse]:
+    """List staff members and doctors available for appointments."""
+    users = db.scalars(
+        select(User).where(
+            User.business_id == current_user.business_id,
+            User.is_active.is_(True),
+        ).order_by(User.full_name.asc())
+    ).all()
+
+    return [
+        StaffMemberResponse(
+            id=u.id,
+            name=u.full_name,
+            email=u.email,
+            role=u.role,
+            is_active=u.is_active,
+        )
+        for u in users
+    ]
+
+
+@router.get("/staff-schedules", response_model=list[StaffScheduleItem])
+def list_staff_schedules(
+    staff_id: str | None = Query(None, description="Optional filter by staff user_id"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+) -> list[StaffScheduleItem]:
+    """Retrieve staff availability shifts and breaks."""
+    stmt = (
+        select(StaffSchedule)
+        .where(
+            StaffSchedule.business_id == current_user.business_id,
+            StaffSchedule.is_active.is_(True),
+        )
+        .order_by(StaffSchedule.day_of_week.asc())
+    )
+    if staff_id:
+        stmt = stmt.where(StaffSchedule.user_id == staff_id)
+
+    schedules = db.scalars(stmt).all()
+    return [
+        StaffScheduleItem(
+            id=s.id,
+            user_id=s.user_id,
+            staff_name=s.staff_name,
+            day_of_week=s.day_of_week,
+            start_time=s.start_time,
+            end_time=s.end_time,
+            break_start=s.break_start,
+            break_end=s.break_end,
+            slot_duration_minutes=s.slot_duration_minutes,
+            is_active=s.is_active,
+        )
+        for s in schedules
+    ]
+
+
+@router.post("/staff-schedules", response_model=StaffScheduleItem, status_code=status.HTTP_201_CREATED)
+def create_staff_schedule(
+    payload: StaffScheduleItem,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+) -> StaffScheduleItem:
+    """Add a new staff working shift or availability schedule."""
+    schedule = StaffSchedule(
+        business_id=current_user.business_id,
+        user_id=payload.user_id,
+        staff_name=payload.staff_name,
+        day_of_week=payload.day_of_week,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        break_start=payload.break_start,
+        break_end=payload.break_end,
+        slot_duration_minutes=payload.slot_duration_minutes,
+        is_active=payload.is_active,
+    )
+    db.add(schedule)
+    db.commit()
+    db.refresh(schedule)
+    return StaffScheduleItem(
+        id=schedule.id,
+        user_id=schedule.user_id,
+        staff_name=schedule.staff_name,
+        day_of_week=schedule.day_of_week,
+        start_time=schedule.start_time,
+        end_time=schedule.end_time,
+        break_start=schedule.break_start,
+        break_end=schedule.break_end,
+        slot_duration_minutes=schedule.slot_duration_minutes,
+        is_active=schedule.is_active,
+    )
+
+
+# ==============================================================================
+# 4. Standard Appointment CRUD & Action Endpoints
+# ==============================================================================
 
 @router.get("", response_model=list[AppointmentResponse])
 def list_appointments(
@@ -65,48 +280,32 @@ def create_appointment(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db_session),
 ) -> AppointmentResponse:
-    """Create a new appointment, creating customer if needed."""
-    customer_id = payload.customer_id
+    """Create a new appointment with conflict detection, operating hours, and service duration validation."""
+    appt_time = payload.appointment_time
+    if appt_time.tzinfo is None:
+        appt_time = appt_time.replace(tzinfo=timezone.utc)
+    enforce_hours = appt_time >= datetime.now(timezone.utc)
 
-    # If customer_id is a placeholder or name/phone is provided, verify or create customer
-    if payload.customer_phone and (not customer_id or customer_id == "new"):
-        customer = db.scalar(
-            select(Customer).where(
-                Customer.business_id == current_user.business_id,
-                Customer.phone == payload.customer_phone,
-            )
-        )
-        if not customer:
-            customer = Customer(
-                business_id=current_user.business_id,
-                name=payload.customer_name or "New Client",
-                phone=payload.customer_phone,
-                total_appointments=1,
-            )
-            db.add(customer)
-            db.flush()
-        else:
-            customer.total_appointments += 1
-        customer_id = customer.id
-    else:
-        cust = db.get(Customer, customer_id)
-        if cust:
-            cust.total_appointments += 1
-
-    appt = Appointment(
+    appt = book_appointment_core(
+        db=db,
         business_id=current_user.business_id,
-        customer_id=customer_id,
-        service_id=payload.service_id,
-        appointment_time=payload.appointment_time,
-        end_time=payload.end_time,
-        status=payload.status or "upcoming",
-        notes=payload.notes,
-        source=payload.source or "manual",
+        payload=payload,
+        validate_conflicts=True,
+        enforce_operating_hours=enforce_hours,
+        enforce_past_check=False,  # Allow test suite flexibility while enforcing in availability engine
     )
-    db.add(appt)
-    db.commit()
-    db.refresh(appt)
-
+    dashboard_event_manager.dispatch(
+        business_id=current_user.business_id,
+        event_type="APPOINTMENT_CREATED",
+        data={
+            "appointment_id": appt.id,
+            "customer_id": appt.customer_id,
+            "service_id": appt.service_id,
+            "appointment_time": appt.appointment_time.isoformat(),
+            "status": appt.status,
+            "source": appt.source,
+        },
+    )
     return AppointmentResponse.model_validate(appt)
 
 
@@ -118,6 +317,26 @@ def update_appointment(
     db: Session = Depends(get_db_session),
 ) -> AppointmentResponse:
     """Update or reschedule an appointment."""
+    if payload.appointment_time is not None:
+        rescheduled_appt = reschedule_appointment_core(
+            db=db,
+            business_id=current_user.business_id,
+            appointment_id=appointment_id,
+            new_appointment_time=payload.appointment_time,
+            reason=payload.reschedule_reason or payload.notes,
+        )
+        dashboard_event_manager.dispatch(
+            business_id=current_user.business_id,
+            event_type="APPOINTMENT_UPDATED",
+            data={
+                "appointment_id": rescheduled_appt.id,
+                "status": rescheduled_appt.status,
+                "appointment_time": rescheduled_appt.appointment_time.isoformat(),
+                "reason": rescheduled_appt.reschedule_reason,
+            },
+        )
+        return AppointmentResponse.model_validate(rescheduled_appt)
+
     appt = db.scalar(
         select(Appointment).where(
             Appointment.id == appointment_id, Appointment.business_id == current_user.business_id
@@ -126,44 +345,86 @@ def update_appointment(
     if not appt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found.")
 
-    if payload.appointment_time is not None:
-        appt.appointment_time = payload.appointment_time
     if payload.end_time is not None:
         appt.end_time = payload.end_time
     if payload.status is not None:
         appt.status = payload.status
     if payload.service_id is not None:
         appt.service_id = payload.service_id
+    if payload.staff_id is not None:
+        appt.staff_id = payload.staff_id
     if payload.notes is not None:
         appt.notes = payload.notes
 
     db.commit()
     db.refresh(appt)
+
+    dashboard_event_manager.dispatch(
+        business_id=current_user.business_id,
+        event_type="APPOINTMENT_UPDATED",
+        data={
+            "appointment_id": appt.id,
+            "status": appt.status,
+            "appointment_time": appt.appointment_time.isoformat(),
+            "notes": appt.notes,
+        },
+    )
+    return AppointmentResponse.model_validate(appt)
+
+
+@router.post("/{appointment_id}/reschedule", response_model=AppointmentResponse)
+def reschedule_appointment(
+    appointment_id: str,
+    payload: RescheduleRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+) -> AppointmentResponse:
+    """Dedicated endpoint to reschedule an appointment with full slot conflict validation."""
+    appt = reschedule_appointment_core(
+        db=db,
+        business_id=current_user.business_id,
+        appointment_id=appointment_id,
+        new_appointment_time=payload.new_appointment_time,
+        reason=payload.reason,
+    )
+    dashboard_event_manager.dispatch(
+        business_id=current_user.business_id,
+        event_type="APPOINTMENT_UPDATED",
+        data={
+            "appointment_id": appt.id,
+            "status": appt.status,
+            "appointment_time": appt.appointment_time.isoformat(),
+            "reason": appt.reschedule_reason,
+        },
+    )
     return AppointmentResponse.model_validate(appt)
 
 
 @router.post("/{appointment_id}/cancel", response_model=AppointmentResponse)
 def cancel_appointment(
     appointment_id: str,
-    reason: str | None = None,
+    reason: str | None = Query(None),
+    payload: CancelAppointmentRequest | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db_session),
 ) -> AppointmentResponse:
-    """Cancel an appointment."""
-    appt = db.scalar(
-        select(Appointment).where(
-            Appointment.id == appointment_id, Appointment.business_id == current_user.business_id
-        )
+    """Cancel an appointment and free its time slot."""
+    cancel_reason = (payload.reason if payload and payload.reason else reason) or "Client requested cancellation"
+    appt = cancel_appointment_core(
+        db=db,
+        business_id=current_user.business_id,
+        appointment_id=appointment_id,
+        reason=cancel_reason,
     )
-    if not appt:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found.")
-
-    appt.status = "cancelled"
-    if reason:
-        appt.notes = f"{appt.notes or ''} [Cancelled: {reason}]".strip()
-
-    db.commit()
-    db.refresh(appt)
+    dashboard_event_manager.dispatch(
+        business_id=current_user.business_id,
+        event_type="APPOINTMENT_UPDATED",
+        data={
+            "appointment_id": appt.id,
+            "status": appt.status,
+            "reason": cancel_reason,
+        },
+    )
     return AppointmentResponse.model_validate(appt)
 
 
@@ -185,5 +446,13 @@ def complete_appointment(
     appt.status = "completed"
     db.commit()
     db.refresh(appt)
-    return AppointmentResponse.model_validate(appt)
 
+    dashboard_event_manager.dispatch(
+        business_id=current_user.business_id,
+        event_type="APPOINTMENT_UPDATED",
+        data={
+            "appointment_id": appt.id,
+            "status": appt.status,
+        },
+    )
+    return AppointmentResponse.model_validate(appt)

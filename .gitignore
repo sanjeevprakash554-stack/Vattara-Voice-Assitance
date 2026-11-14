@@ -41,10 +41,13 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# Databases
+# Databases & Backups
 *.db
+*.db.*
 *.sqlite
 *.sqlite3
+*.bak
+backend/temp_test/
 
 # Node & Frontend
 node_modules/

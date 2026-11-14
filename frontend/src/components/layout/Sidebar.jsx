@@ -12,21 +12,36 @@ import {
   AudioWaveform,
   Activity,
   Radio,
+  ShieldAlert,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-
-const navigation = [
-  { name: 'Console', href: '/', icon: LayoutDashboard },
-  { name: 'AI Voice Agent', href: '/assistant', icon: Bot, badge: 'Live' },
-  { name: 'Call Monitor', href: '/calls', icon: PhoneCall },
-  { name: 'Appointments', href: '/appointments', icon: CalendarDays },
-  { name: 'Customer Hub', href: '/customers', icon: Users },
-  { name: 'Reminders', href: '/reminders', icon: BellRing },
-  { name: 'Analytics', href: '/reports', icon: BarChart3 },
-  { name: 'Organization', href: '/settings', icon: Settings },
-];
+import { useAuth } from '../../context/AuthContext';
 
 export default function Sidebar({ isOpen, onClose }) {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
+
+  const baseNavigation = [
+    { name: 'Console', href: '/', icon: LayoutDashboard },
+    { name: 'AI Voice Agent', href: '/assistant', icon: Bot, badge: 'Live' },
+    { name: 'Call Monitor', href: '/calls', icon: PhoneCall },
+    { name: 'Appointments', href: '/appointments', icon: CalendarDays },
+    { name: 'Customer Hub', href: '/customers', icon: Users },
+    { name: 'Reminders', href: '/reminders', icon: BellRing },
+    { name: 'Analytics', href: '/reports', icon: BarChart3 },
+    { name: 'Telephony Trunks', href: '/integrations', icon: Radio },
+    { name: 'Organization', href: '/settings', icon: Settings },
+  ];
+
+  if (isSuperAdmin) {
+    baseNavigation.push({
+      name: 'Platform Admin',
+      href: '/super-admin',
+      icon: ShieldAlert,
+      badge: 'Root',
+    });
+  }
+
   return (
     <>
       {/* Mobile backdrop */}
@@ -65,7 +80,7 @@ export default function Sidebar({ isOpen, onClose }) {
             Platform Matrix
           </div>
 
-          {navigation.map((item) => (
+          {baseNavigation.map((item) => (
             <NavLink
               key={item.name}
               to={item.href}
@@ -85,7 +100,11 @@ export default function Sidebar({ isOpen, onClose }) {
               </div>
 
               {item.badge && (
-                <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-burnt/15 text-burnt border border-burnt/30 uppercase tracking-wider">
+                <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                  item.badge === 'Root'
+                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    : 'bg-burnt/15 text-burnt border border-burnt/30'
+                }`}>
                   {item.badge}
                 </span>
               )}
@@ -109,7 +128,7 @@ export default function Sidebar({ isOpen, onClose }) {
 
           <div className="pt-1 flex items-center justify-between text-[10px] text-amber font-mono font-semibold">
             <span className="flex items-center gap-1">
-              <Radio className="w-3 h-3 text-burnt animate-pulse" /> Twilio Trunk
+              <Radio className="w-3 h-3 text-burnt animate-pulse" /> Multi-Trunk
             </span>
             <span className="text-emerald-400">99.9% Up</span>
           </div>

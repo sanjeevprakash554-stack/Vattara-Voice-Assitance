@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { DashboardWebSocketProvider } from './context/DashboardWebSocketContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/layout/Layout';
 
@@ -16,6 +17,8 @@ import Customers from './pages/customers/Customers';
 import Reminders from './pages/reminders/Reminders';
 import Reports from './pages/reports/Reports';
 import ProfileSettings from './pages/settings/ProfileSettings';
+import Integrations from './pages/integrations/Integrations';
+import SuperAdmin from './pages/superadmin/SuperAdmin';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -51,7 +54,9 @@ export default function App() {
               path="/"
               element={
                 <ProtectedRoute>
-                  <Layout />
+                  <DashboardWebSocketProvider>
+                    <Layout />
+                  </DashboardWebSocketProvider>
                 </ProtectedRoute>
               }
             >
@@ -62,7 +67,9 @@ export default function App() {
               <Route path="customers" element={<Customers />} />
               <Route path="reminders" element={<Reminders />} />
               <Route path="reports" element={<Reports />} />
+              <Route path="integrations" element={<Integrations />} />
               <Route path="settings" element={<ProfileSettings />} />
+              <Route path="super-admin" element={<SuperAdmin />} />
             </Route>
 
             {/* Catch-all Fallback */}

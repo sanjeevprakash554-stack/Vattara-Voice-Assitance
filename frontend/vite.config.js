@@ -10,6 +10,7 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,
+        ws: true,
         configure: (proxy) => {
           proxy.on('error', (err, _req, res) => {
             // Gracefully handle backend offline without polluting terminal with ECONNREFUSED stack traces

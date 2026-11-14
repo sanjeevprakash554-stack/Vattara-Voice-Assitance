@@ -44,7 +44,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as exc:
             logger.warning("Database auto-init skipped or deferred: %s", exc)
 
+    # Start background reminder scheduler task in production/development
+    reminder_task = None
+    if settings.ENVIRONMENT != "test":
+        try:
+            import asyncio
+            from app.services.reminder_worker import reminder_scheduler_loop
+            reminder_task = asyncio.create_task(reminder_scheduler_loop(interval_seconds=60))
+        except Exception as exc:
+            logger.warning("Reminder background scheduler start skipped: %s", exc)
+
     yield
+
+    if reminder_task:
+        reminder_task.cancel()
     logger.info("Shutting down %s...", settings.PROJECT_NAME)
 
 
@@ -73,36 +86,81 @@ app.add_middleware(
 # ------------------------------------------------------------------------------
 # Global Exception Handlers
 # ------------------------------------------------------------------------------
+
 @app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+async def http_exception_handler(
+    request: Request,
+    exc: HTTPException,
+) -> JSONResponse:
     """Standardized handler for HTTPExceptions."""
-    logger.warning("HTTPException %d on %s: %s", exc.status_code, request.url.path, exc.detail)
+
+    logger.warning(
+        "HTTPException %d on %s: %s",
+        exc.status_code,
+        request.url.path,
+        exc.detail,
+    )
+
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
+        headers=exc.headers,
     )
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
     """Standardized handler for schema validation failures."""
-    logger.warning("Validation error on %s: %s", request.url.path, exc.errors())
+
+    safe_errors = [
+        {
+            "location": error.get("loc"),
+            "message": error.get("msg"),
+            "type": error.get("type"),
+        }
+        for error in exc.errors()
+    ]
+
+    logger.warning(
+        "Validation error on %s: %s",
+        request.url.path,
+        safe_errors,
+    )
+
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
             "detail": "Request payload validation failed",
-            "errors": exc.errors(),
+            "errors": safe_errors,
         },
     )
 
 
 @app.exception_handler(Exception)
-async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Catch-all handler for unhandled server errors to prevent leaking raw traces."""
-    logger.error("Unhandled error processing %s: %s", request.url.path, exc, exc_info=True)
+async def generic_exception_handler(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    """Catch-all handler for unhandled server errors."""
+
+    logger.error(
+        "Unhandled error processing %s: %s",
+        request.url.path,
+        exc,
+        exc_info=True,
+    )
+
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": "Internal server error occurred. Please contact system support."},
+        content={
+            "detail": (
+                "Internal server error occurred. "
+                "Please contact system support."
+            )
+        },
     )
 
 

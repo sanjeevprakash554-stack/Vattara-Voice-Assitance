@@ -56,6 +56,16 @@ from app.schemas.dashboard import (
     CallTrendPoint,
     DashboardStats,
 )
+from app.schemas.availability import (
+    AppointmentSettingsSchema,
+    BreakItem,
+    FullAvailabilityConfigResponse,
+    FullAvailabilityUpdateRequest,
+    HolidayItem,
+    SpecialDateItem,
+    WeeklyScheduleItem,
+    WeeklyScheduleUpdateRequest,
+)
 
 __all__ = [
     "DatabaseHealthResponse",
@@ -98,4 +108,12 @@ __all__ = [
     "CallDurationReport",
     "CallTrendPoint",
     "DashboardStats",
+    "AppointmentSettingsSchema",
+    "BreakItem",
+    "FullAvailabilityConfigResponse",
+    "FullAvailabilityUpdateRequest",
+    "HolidayItem",
+    "SpecialDateItem",
+    "WeeklyScheduleItem",
+    "WeeklyScheduleUpdateRequest",
 ]

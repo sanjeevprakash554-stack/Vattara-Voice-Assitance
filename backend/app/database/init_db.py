@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import get_password_hash
 from app.database.base import Base
@@ -12,7 +13,9 @@ from app.models.assistant import AssistantConfig, FAQ, Service
 from app.models.business import Business
 from app.models.call import Call
 from app.models.customer import Customer
+from app.models.integration import BusinessIntegration
 from app.models.reminder import Reminder
+from app.models.subscription import Invoice, Subscription
 from app.models.user import User
 
 logger = get_logger(__name__)
@@ -44,17 +47,54 @@ def init_db(db: Session) -> None:
     )
     db.add(business)
 
-    # 2. Create Admin User
-    admin_user = User(
-        id="demo-user-admin",
-        business_id=business.id,
-        email="admin@vattara.com",
-        full_name="Dr. Rajesh Kumar",
-        hashed_password=get_password_hash("Admin@123"),
-        role="admin",
-        is_active=True,
-    )
-    db.add(admin_user)
+    # 2. Create Admin and Super Admin Users (Hardened for Production)
+    superuser_password = settings.FIRST_SUPERUSER_PASSWORD
+    superuser_email = settings.FIRST_SUPERUSER_EMAIL or "superadmin@vattara.com"
+
+    if settings.ENVIRONMENT.lower() == "production":
+        # In production, never seed hardcoded default development credentials
+        if not superuser_password:
+            logger.warning(
+                "Production environment detected: No FIRST_SUPERUSER_PASSWORD configured. "
+                "Skipping initial superadmin seeding. Run python -m app.scripts.create_superuser to safely initialize."
+            )
+        else:
+            super_admin_user = User(
+                business_id=business.id,
+                email=superuser_email,
+                full_name="Platform Super Admin",
+                hashed_password=get_password_hash(superuser_password),
+                role="super_admin",
+                is_active=True,
+            )
+            db.add(super_admin_user)
+            logger.info("Successfully provisioned initial production superadmin (%s)", superuser_email)
+    else:
+        # Development / Testing environment
+        dev_admin_pass = "Admin@123"
+        dev_superadmin_pass = superuser_password or "SuperAdmin@123"
+
+        admin_user = User(
+            id="demo-user-admin",
+            business_id=business.id,
+            email="admin@vattara.com",
+            full_name="Dr. Rajesh Kumar",
+            hashed_password=get_password_hash(dev_admin_pass),
+            role="admin",
+            is_active=True,
+        )
+        db.add(admin_user)
+
+        super_admin_user = User(
+            id="demo-user-superadmin",
+            business_id=business.id,
+            email=superuser_email,
+            full_name="Platform Super Admin",
+            hashed_password=get_password_hash(dev_superadmin_pass),
+            role="super_admin",
+            is_active=True,
+        )
+        db.add(super_admin_user)
 
     # 3. Create Assistant Configuration
     assistant_config = AssistantConfig(
@@ -233,6 +273,48 @@ def init_db(db: Session) -> None:
             sent_at=now - timedelta(days=2) if r_status == "sent" else None,
         )
         db.add(rem)
+
+    # 10. Create Subscription, Invoice, and BusinessIntegration
+    subscription = Subscription(
+        id="demo-subscription-1",
+        business_id=business.id,
+        plan_name="professional",
+        billing_cycle="monthly",
+        status="active",
+        current_period_start=now - timedelta(days=10),
+        current_period_end=now + timedelta(days=20),
+        monthly_call_minutes_limit=1500,
+        used_call_minutes=340,
+        max_assistants=2,
+        max_staff=10,
+    )
+    db.add(subscription)
+
+    invoice = Invoice(
+        id="demo-invoice-1",
+        business_id=business.id,
+        subscription_id=subscription.id,
+        invoice_number="INV-2026-001",
+        amount=4999.0,
+        currency="INR",
+        status="paid",
+        billing_date=now - timedelta(days=10),
+        paid_at=now - timedelta(days=10),
+    )
+    db.add(invoice)
+
+    integration = BusinessIntegration(
+        id="demo-integration-1",
+        business_id=business.id,
+        primary_provider="twilio",
+        twilio_account_sid="ACmock_demo_twilio_sid_98412",
+        twilio_phone_number="+91 44 2828 9000",
+        is_twilio_verified=True,
+        smartflo_caller_id="+91 80 4000 8888",
+        is_smartflo_verified=False,
+        inbound_webhook_url="https://api.vattara.ai/api/v1/voice/twiml",
+    )
+    db.add(integration)
 
     db.commit()
     logger.info("Demo database seeding complete!")

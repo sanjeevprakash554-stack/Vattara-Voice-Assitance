@@ -38,12 +38,18 @@ def create_access_token(
 
 
 def decode_access_token(token: str) -> dict[str, Any] | None:
-    """Decode and validate a JWT access token."""
+    """Decode and validate a JWT access token, strictly enforcing expiration."""
     try:
         payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"require": ["exp", "sub", "iat"], "verify_exp": True},
         )
         return payload
+    except jwt.ExpiredSignatureError:
+        logger.warning("JWT verification failed: Token has expired.")
+        return None
     except jwt.PyJWTError as exc:
         logger.warning("JWT verification failed: %s", exc)
         return None
@@ -75,8 +81,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
                 100000,
             )
             return hmac.compare_digest(key.hex(), stored_key)
-        # Fallback for plain comparison in demo seeds
-        return hmac.compare_digest(plain_password, hashed_password)
+        # Disallow plain text password comparison fallback
+        logger.warning("Password verification failed: Unrecognized or non-PBKDF2 hash format.")
+        return False
     except Exception as exc:
         logger.error("Password verification error: %s", exc)
         return False

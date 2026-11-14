@@ -13,12 +13,14 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../../context/AuthContext';
+import { useDashboardWebSocket } from '../../context/DashboardWebSocketContext';
 import { callsService } from '../../services/api';
 import LiveCallSimulatorModal from '../common/LiveCallSimulatorModal';
 import ThemeCustomizerModal from '../theme/ThemeCustomizerModal';
 
 export default function Header({ onMenuClick, onCallSimulated }) {
   const { user, business, logout } = useAuth();
+  const { isConnected, connectionStatus } = useDashboardWebSocket();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [callModalOpen, setCallModalOpen] = useState(false);
   const [themeModalOpen, setThemeModalOpen] = useState(false);
@@ -51,6 +53,19 @@ export default function Header({ onMenuClick, onCallSimulated }) {
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-burnt/15 text-burnt border border-burnt/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-burnt animate-ping" />
                 {business?.vertical || 'Clinic'}
+              </span>
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider ${
+                  isConnected
+                    ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/30'
+                    : connectionStatus === 'connecting'
+                    ? 'bg-amber-950/60 text-amber-300 border border-amber-500/30'
+                    : 'bg-rose-950/60 text-rose-400 border border-rose-500/30'
+                }`}
+                title={isConnected ? 'Connected to live telephony WebSocket stream' : 'Reconnecting to telemetry stream...'}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+                {isConnected ? 'LIVE SYNC' : connectionStatus === 'connecting' ? 'SYNCING...' : 'OFFLINE'}
               </span>
             </div>
 

@@ -9,12 +9,32 @@ class DashboardStats(BaseModel):
 
     total_incoming_calls: int = 0
     total_outgoing_calls: int = 0
-    total_appointments: int = 0
-    total_customers: int = 0
+    total_calls: int = 0
+    answered_calls: int = 0
     successful_calls: int = 0
     missed_calls: int = 0
-    active_assistant: bool = True
+    call_success_rate: float = 0.0
+
+    total_appointments: int = 0
     upcoming_appointments_count: int = 0
+    completed_appointments_count: int = 0
+    cancelled_appointments_count: int = 0
+
+    total_customers: int = 0
+    active_assistant: bool = True
+
+    # Reminder Statistics
+    total_reminders: int = 0
+    pending_reminders: int = 0
+    sent_reminders: int = 0
+    confirmed_reminders: int = 0
+    failed_reminders: int = 0
+
+    reminders_total: int = 0
+    reminders_pending: int = 0
+    reminders_sent: int = 0
+    reminders_confirmed: int = 0
+    reminders_failed: int = 0
 
 
 class ActivityItem(BaseModel):

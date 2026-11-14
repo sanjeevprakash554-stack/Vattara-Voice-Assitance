@@ -24,6 +24,9 @@ class Appointment(Base, TimestampMixin):
     service_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("services.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    staff_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     appointment_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
     )
@@ -32,6 +35,8 @@ class Appointment(Base, TimestampMixin):
         String(30), default="upcoming", nullable=False, index=True
     )  # upcoming, completed, cancelled, rescheduled
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reschedule_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(
         String(30), default="ai_call", nullable=False
     )  # ai_call, manual, web
@@ -40,5 +45,6 @@ class Appointment(Base, TimestampMixin):
     business = relationship("Business", back_populates="appointments")
     customer = relationship("Customer", back_populates="appointments")
     service = relationship("Service", back_populates="appointments")
+    staff = relationship("User", foreign_keys=[staff_id])
     reminders = relationship("Reminder", back_populates="appointment", cascade="all, delete-orphan")
 

@@ -69,6 +69,9 @@ def update_assistant_config(
     config.system_prompt = payload.system_prompt
     config.business_info = payload.business_info
     config.working_hours = payload.working_hours
+    config.ai_provider = payload.ai_provider
+    config.ai_model = payload.ai_model
+    config.enable_tanglish = payload.enable_tanglish
     config.is_active = payload.is_active
 
     db.commit()
