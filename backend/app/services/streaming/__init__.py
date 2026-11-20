@@ -20,6 +20,8 @@ from app.services.streaming.stt_provider import (
     BaseStreamingSTT,
     DeepgramStreamingSTT,
     MockStreamingSTT,
+    SarvamRealtimeSTTStream,
+    SarvamStreamingSTT,
     WhisperStreamingSTT,
     get_streaming_stt_provider,
 )
@@ -30,6 +32,7 @@ from app.services.streaming.tts_provider import (
     ElevenLabsStreamingTTS,
     MockStreamingTTS,
     OpenAIStreamingTTS,
+    SarvamStreamingTTS,
     get_streaming_tts_provider,
 )
 
@@ -39,12 +42,15 @@ __all__ = [
     "stream_manager",
     "StreamOrchestrator",
     "BaseStreamingSTT",
+    "SarvamStreamingSTT",
+    "SarvamRealtimeSTTStream",
     "MockStreamingSTT",
     "DeepgramStreamingSTT",
     "WhisperStreamingSTT",
     "get_streaming_stt_provider",
     "BaseStreamingTTS",
     "MockStreamingTTS",
+    "SarvamStreamingTTS",
     "ElevenLabsStreamingTTS",
     "OpenAIStreamingTTS",
     "CarrierFallbackTTS",

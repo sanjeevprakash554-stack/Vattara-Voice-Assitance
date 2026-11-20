@@ -1,5 +1,6 @@
 """Appointment Management and Scheduling routes."""
 
+import re
 from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -9,9 +10,11 @@ from app.api.deps import get_current_user, get_db_session
 from app.models.appointment import Appointment
 from app.models.business import Business
 from app.models.business_hours import BusinessHour
+from app.models.call import Call
 from app.models.staff_schedule import StaffSchedule
 from app.models.user import User
 from app.schemas.appointment import (
+    AppointmentCallDetail,
     AppointmentCreate,
     AppointmentResponse,
     AppointmentUpdate,
@@ -30,6 +33,7 @@ from app.services.scheduling_service import (
     calculate_available_slots,
     cancel_appointment_core,
     get_all_operating_hours,
+    get_business_timezone,
     reschedule_appointment_core,
 )
 
@@ -241,7 +245,7 @@ def list_appointments(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db_session),
 ) -> list[AppointmentResponse]:
-    """List appointments for the business with optional status filter."""
+    """List appointments for the business with optional status filter and linked telephony calls."""
     stmt = (
         select(Appointment)
         .where(Appointment.business_id == current_user.business_id)
@@ -253,7 +257,34 @@ def list_appointments(
 
     stmt = stmt.offset(offset).limit(limit)
     appointments = db.scalars(stmt).all()
-    return [AppointmentResponse.model_validate(a) for a in appointments]
+
+    # Pre-fetch recent calls for this business to attach call information
+    recent_calls = db.scalars(
+        select(Call)
+        .where(Call.business_id == current_user.business_id)
+        .order_by(Call.created_at.desc())
+        .limit(100)
+    ).all()
+    calls_by_id = {c.id: c for c in recent_calls}
+
+    results: list[AppointmentResponse] = []
+    for a in appointments:
+        resp = AppointmentResponse.model_validate(a)
+        matched_call = None
+        if a.notes:
+            sid_match = re.search(r"CallSid:\s*([a-f0-9\-]+)", a.notes)
+            if sid_match and sid_match.group(1) in calls_by_id:
+                matched_call = calls_by_id[sid_match.group(1)]
+        if not matched_call:
+            for c in recent_calls:
+                if a.id in (c.summary or ""):
+                    matched_call = c
+                    break
+        if matched_call:
+            resp.call = AppointmentCallDetail.model_validate(matched_call)
+        results.append(resp)
+
+    return results
 
 
 @router.get("/{appointment_id}", response_model=AppointmentResponse)
@@ -262,7 +293,7 @@ def get_appointment(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db_session),
 ) -> AppointmentResponse:
-    """Get single appointment details."""
+    """Get single appointment details including associated voice call information."""
     appt = db.scalar(
         select(Appointment).where(
             Appointment.id == appointment_id, Appointment.business_id == current_user.business_id
@@ -271,7 +302,25 @@ def get_appointment(
     if not appt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found.")
 
-    return AppointmentResponse.model_validate(appt)
+    resp = AppointmentResponse.model_validate(appt)
+
+    # Search for associated Call record
+    call_rec = None
+    if appt.notes:
+        sid_match = re.search(r"CallSid:\s*([a-f0-9\-]+)", appt.notes)
+        if sid_match:
+            call_rec = db.get(Call, sid_match.group(1))
+    if not call_rec:
+        call_rec = db.scalar(
+            select(Call).where(
+                Call.business_id == current_user.business_id,
+                Call.summary.like(f"%{appt.id}%"),
+            )
+        )
+    if call_rec:
+        resp.call = AppointmentCallDetail.model_validate(call_rec)
+
+    return resp
 
 
 @router.post("", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
@@ -281,18 +330,21 @@ def create_appointment(
     db: Session = Depends(get_db_session),
 ) -> AppointmentResponse:
     """Create a new appointment with conflict detection, operating hours, and service duration validation."""
+    biz = db.get(Business, current_user.business_id)
+    biz_tz = get_business_timezone(biz) if biz else timezone.utc
+
     appt_time = payload.appointment_time
     if appt_time.tzinfo is None:
-        appt_time = appt_time.replace(tzinfo=timezone.utc)
-    enforce_hours = appt_time >= datetime.now(timezone.utc)
+        appt_time = appt_time.replace(tzinfo=biz_tz)
+    payload.appointment_time = appt_time
 
     appt = book_appointment_core(
         db=db,
         business_id=current_user.business_id,
         payload=payload,
         validate_conflicts=True,
-        enforce_operating_hours=enforce_hours,
-        enforce_past_check=False,  # Allow test suite flexibility while enforcing in availability engine
+        enforce_operating_hours=True,
+        enforce_past_check=True,
     )
     dashboard_event_manager.dispatch(
         business_id=current_user.business_id,
@@ -300,7 +352,9 @@ def create_appointment(
         data={
             "appointment_id": appt.id,
             "customer_id": appt.customer_id,
+            "customer_name": appt.customer.name if appt.customer else None,
             "service_id": appt.service_id,
+            "service_name": appt.service.name if appt.service else None,
             "appointment_time": appt.appointment_time.isoformat(),
             "status": appt.status,
             "source": appt.source,

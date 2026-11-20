@@ -31,10 +31,10 @@ class AssistantConfig(Base, TimestampMixin):
         nullable=True,
         default='{"monday":{"open":"09:00","close":"18:00","enabled":true},"tuesday":{"open":"09:00","close":"18:00","enabled":true},"wednesday":{"open":"09:00","close":"18:00","enabled":true},"thursday":{"open":"09:00","close":"18:00","enabled":true},"friday":{"open":"09:00","close":"18:00","enabled":true},"saturday":{"open":"10:00","close":"16:00","enabled":true},"sunday":{"open":"10:00","close":"14:00","enabled":false}}',
     )
-    ai_provider: Mapped[str] = mapped_column(String(50), default="mock", nullable=False)
-    ai_model: Mapped[str] = mapped_column(String(50), default="gpt-4o-mini", nullable=False)
-    stt_provider: Mapped[str] = mapped_column(String(50), default="deepgram", nullable=False)
-    tts_provider: Mapped[str] = mapped_column(String(50), default="openai", nullable=False)
+    ai_provider: Mapped[str] = mapped_column(String(50), default="gemini", nullable=False)
+    ai_model: Mapped[str] = mapped_column(String(50), default="gemini-3.1-flash-lite", nullable=False)
+    stt_provider: Mapped[str] = mapped_column(String(50), default="sarvam", nullable=False)
+    tts_provider: Mapped[str] = mapped_column(String(50), default="sarvam", nullable=False)
     fallback_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     enable_tanglish: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

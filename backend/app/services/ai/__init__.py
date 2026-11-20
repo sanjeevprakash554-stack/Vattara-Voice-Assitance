@@ -24,8 +24,7 @@ from app.services.ai.tools import AI_TOOLS_SPEC, execute_tool_call
 from app.services.ai.voice_io import (
     DeepgramSTTAdapter,
     ElevenLabsTTSAdapter,
-    TwilioSTTAdapter,
-    TwilioTTSAdapter,
+    SarvamTTSAdapter,
 )
 
 __all__ = [
@@ -47,8 +46,7 @@ __all__ = [
     "build_system_prompt",
     "AI_TOOLS_SPEC",
     "execute_tool_call",
-    "TwilioSTTAdapter",
-    "TwilioTTSAdapter",
     "DeepgramSTTAdapter",
     "ElevenLabsTTSAdapter",
+    "SarvamTTSAdapter",
 ]

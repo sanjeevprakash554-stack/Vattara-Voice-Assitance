@@ -1,8 +1,8 @@
 """Pydantic schemas for Appointments and Scheduling Engine."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 from app.schemas.customer import CustomerResponse
 from app.schemas.assistant import ServiceResponse
 
@@ -30,15 +30,6 @@ class AppointmentCreate(AppointmentBase):
 
     customer_name: str | None = None
     customer_phone: str | None = None
-
-
-class ExotelAppointmentRequest(AppointmentCreate):
-    """Payload for Exotel Voice Agent appointment gateway with optional integration key."""
-
-    integration_key: str | None = Field(
-        default=None,
-        description="Secure integration secret key for Exotel server-to-server authentication",
-    )
 
 
 class AppointmentUpdate(BaseModel):
@@ -73,6 +64,19 @@ class CancelAppointmentRequest(BaseModel):
     )
 
 
+class AppointmentCallDetail(BaseModel):
+    """Voice call telemetry and transcript details associated with an appointment."""
+
+    id: str = Field(..., description="Call UUID")
+    caller_name: str | None = Field(default=None, description="Caller name captured by telephony engine")
+    caller_phone: str | None = Field(default=None, description="Caller phone number")
+    summary: str | None = Field(default=None, description="AI-generated call summary")
+    transcript: str | None = Field(default=None, description="Full multi-turn dialogue transcript")
+    duration_seconds: int = Field(default=0, description="Call duration in seconds")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AppointmentResponse(AppointmentBase):
     """Response schema for an appointment."""
 
@@ -82,6 +86,51 @@ class AppointmentResponse(AppointmentBase):
     updated_at: datetime
     customer: CustomerResponse | None = None
     service: ServiceResponse | None = None
+    call: AppointmentCallDetail | None = None
+
+    @computed_field
+    def customer_name(self) -> str | None:
+        """Top-level customer name convenience property for frontend dashboard consumption."""
+        return self.customer.name if self.customer else None
+
+    @computed_field
+    def customer_phone(self) -> str | None:
+        """Top-level customer phone convenience property for frontend dashboard consumption."""
+        return self.customer.phone if self.customer else None
+
+    @computed_field
+    def service_name(self) -> str | None:
+        """Top-level service name convenience property for frontend dashboard consumption."""
+        return self.service.name if self.service else None
+
+    @field_serializer("appointment_time", when_used="always")
+    def serialize_appointment_time(self, dt: datetime) -> str:
+        """Ensure appointment_time is serialized as an unambiguous timezone-aware UTC ISO-8601 string."""
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt.isoformat()
+
+    @field_serializer("end_time", when_used="always")
+    def serialize_end_time(self, dt: datetime | None) -> str | None:
+        """Ensure end_time is serialized as an unambiguous timezone-aware UTC ISO-8601 string."""
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt.isoformat()
+
+    @field_serializer("created_at", "updated_at", when_used="always")
+    def serialize_timestamps(self, dt: datetime) -> str:
+        """Ensure timestamps are serialized as unambiguous timezone-aware UTC ISO-8601 strings."""
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt.isoformat()
 
     model_config = ConfigDict(from_attributes=True)
 

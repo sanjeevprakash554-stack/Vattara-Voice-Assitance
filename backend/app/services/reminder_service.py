@@ -228,7 +228,7 @@ def reschedule_appointment_reminders(
     reminders = db.scalars(
         select(Reminder).where(
             Reminder.appointment_id == appointment.id,
-            Reminder.status.in_(["pending", "retrying"]),
+            Reminder.status.in_(["pending", "scheduled", "retrying"]),
         )
     ).all()
 

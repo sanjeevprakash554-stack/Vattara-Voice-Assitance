@@ -15,28 +15,37 @@ def get_llm_provider(
     model: str | None = None,
     api_key: str | None = None,
 ) -> BaseLLMProvider:
-    """Return the configured LLM provider instance with graceful offline fallback.
+    """Return the configured LLM provider instance.
     
     Supported values for provider_name:
-    - 'mock' (default for testing and offline environments)
+    - 'mock' (for automated testing and offline environments)
     - 'openai' (uses OpenAI GPT-4o / GPT-4o-mini)
     - 'gemini' (uses Google Gemini 1.5/2.0)
     """
     selected = (provider_name or settings.AI_PROVIDER or "mock").lower().strip()
+    is_production = settings.ENVIRONMENT.lower() == "production"
 
     if selected == "openai":
         key = api_key or settings.OPENAI_API_KEY
         if key:
             logger.info("Using OpenAILLMProvider with model '%s'", model or settings.AI_MODEL)
             return OpenAILLMProvider(api_key=key, model=model or settings.AI_MODEL)
-        logger.warning("OPENAI_API_KEY missing. Falling back to MockLLMProvider.")
+        if is_production:
+            raise ValueError("OPENAI_API_KEY is required and cannot be omitted in production environment.")
+        logger.warning("OPENAI_API_KEY missing. Falling back to MockLLMProvider in development/test environment.")
 
     elif selected == "gemini":
         key = api_key or settings.GEMINI_API_KEY
         if key:
-            logger.info("Using GeminiLLMProvider with model '%s'", model or "gemini-1.5-flash")
-            return GeminiLLMProvider(api_key=key, model=model or "gemini-1.5-flash")
-        logger.warning("GEMINI_API_KEY missing. Falling back to MockLLMProvider.")
+            chosen_model = model or settings.AI_MODEL or "gemini-3.1-flash-lite"
+            logger.info("Using GeminiLLMProvider with model '%s'", chosen_model)
+            return GeminiLLMProvider(api_key=key, model=chosen_model)
+        if is_production:
+            raise ValueError("GEMINI_API_KEY is required and cannot be omitted in production environment.")
+        logger.warning("GEMINI_API_KEY missing. Falling back to MockLLMProvider in development/test environment.")
 
-    # Default / Fallback: MockLLMProvider
+    elif is_production and selected == "mock":
+        raise ValueError("MockLLMProvider cannot be used as primary provider in production environment.")
+
+    # Default for test and offline dev environments
     return MockLLMProvider()

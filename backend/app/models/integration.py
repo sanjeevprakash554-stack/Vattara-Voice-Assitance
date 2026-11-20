@@ -18,8 +18,8 @@ class BusinessIntegration(Base, TimestampMixin):
         String(36), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
     )
     primary_provider: Mapped[str] = mapped_column(
-        String(50), default="twilio", nullable=False
-    )  # twilio, plivo, smartflo, exotel
+        String(50), default="plivo", nullable=False
+    )  # plivo
 
     # Plivo Configuration (Primary Indian Telephony Provider)
     plivo_auth_id: Mapped[str | None] = mapped_column(String(100), nullable=True)

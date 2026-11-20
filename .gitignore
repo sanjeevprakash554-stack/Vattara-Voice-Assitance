@@ -47,6 +47,7 @@ htmlcov/
 *.sqlite
 *.sqlite3
 *.bak
+*.raw
 backend/temp_test/
 
 # Node & Frontend

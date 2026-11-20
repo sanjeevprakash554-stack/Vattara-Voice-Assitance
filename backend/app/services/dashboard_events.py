@@ -133,6 +133,11 @@ class DashboardEventManager:
         if not business_id:
             return
 
+        # If no WebSocket subscribers are active for this tenant, exit immediately
+        # avoids creating unnecessary event loops or socketpairs on synchronous threads
+        if not self._connections.get(business_id):
+            return
+
         try:
             loop = asyncio.get_running_loop()
             if loop.is_running():

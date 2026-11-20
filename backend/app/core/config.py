@@ -78,10 +78,6 @@ class Settings(BaseSettings):
     RATE_LIMIT_FORGOT_PASSWORD_PER_MINUTE: int = 3
     RATE_LIMIT_RESET_PASSWORD_PER_MINUTE: int = 5
 
-    # Twilio Telephony Settings (Phase 5)
-    TWILIO_ACCOUNT_SID: str | None = None
-    TWILIO_AUTH_TOKEN: str | None = None
-    TWILIO_PHONE_NUMBER: str | None = None
     PUBLIC_BASE_URL: str | None = None
     NGROK_AUTHTOKEN: str | None = None
 
@@ -101,20 +97,9 @@ class Settings(BaseSettings):
             and self.PLIVO_AUTH_TOKEN.strip() != ""
         )
 
-    EXOTEL_API_KEY: str | None = None
-    EXOTEL_BUSINESS_API_KEYS: str | None = None  # Multi-tenant mapping: "key1:biz_id1,key2:biz_id2"
-    EXOTEL_INTEGRATION_KEY: str | None = None
-    EXOTEL_BUSINESS_ID: str | None = None
-    EXOTEL_CALLER_ID: str | None = None
-
-    @property
-    def is_exotel_configured(self) -> bool:
-        """Check whether Exotel API key or integration keys are configured."""
-        return bool(self.EXOTEL_API_KEY or self.EXOTEL_INTEGRATION_KEY)
-
     # AI Conversational Voice Engine Settings (Phase 3)
-    AI_PROVIDER: str = "mock"  # "mock", "openai", "gemini"
-    AI_MODEL: str = "gpt-4o-mini"
+    AI_PROVIDER: str = "gemini"  # "gemini", "openai", "mock"
+    AI_MODEL: str = "gemini-3.1-flash-lite"
     OPENAI_API_KEY: str | None = Field(
         default=None,
         validation_alias=AliasChoices(
@@ -126,24 +111,46 @@ class Settings(BaseSettings):
             "OPENAI_TTS_API_KEY",
         ),
     )
-    GEMINI_API_KEY: str | None = None
+    GEMINI_API_KEY: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "GEMINI_API_KEY",
+            "gemini_api_key",
+            "GOOGLE_API_KEY",
+            "google_api_key",
+        ),
+    )
     AI_TEMPERATURE: float = 0.2
     ENABLE_TANGLISH: bool = True
 
-    # Tata Smartflo Cloud Telephony Settings (Phase 4)
-    SMARTFLO_API_TOKEN: str | None = None
-    SMARTFLO_CLICK2CALL_KEY: str | None = None
-    SMARTFLO_BASE_URL: str = "https://api-smartflo.tatateleservices.com/v1"
-    SMARTFLO_CALLER_ID: str | None = None
-    SMARTFLO_WEBHOOK_TOKEN: str | None = None
-    SMARTFLO_BUSINESS_MAPPING: str | None = None  # Format: "did1:biz_id1,did2:biz_id2"
-
     # Real-Time Voice Streaming, STT & TTS Settings (Phase 5)
-    STT_PROVIDER: str = "whisper"  # "whisper", "deepgram", "mock"
+    STT_PROVIDER: str = "sarvam"  # "sarvam", "deepgram", "whisper", "mock"
+    SARVAM_STT_MODEL: str = "saaras:v4"
+    SARVAM_STT_LANGUAGE: str = "auto"
+    SARVAM_STT_ENCODING: str = "mulaw"
+    SARVAM_STT_SAMPLE_RATE: int = 8000
     DEEPGRAM_API_KEY: str | None = None
     DEEPGRAM_MODEL: str = "nova-3"
-    DEEPGRAM_LANGUAGE: str = "multi"
-    TTS_PROVIDER: str = "openai"  # "openai", "elevenlabs", "mock", "carrier"
+    DEEPGRAM_LANGUAGE: str = "multi"  # Deepgram Nova-3 multilingual mode supporting dynamic code-switching
+    DEEPGRAM_LANGUAGE_HINTS: str = "ta,en"  # Biasing hints for Tamil and English telephony
+
+    @property
+    def deepgram_language_hints_list(self) -> list[str]:
+        """Return parsed list of language hints for Deepgram Nova-3 multilingual mode."""
+        if not self.DEEPGRAM_LANGUAGE_HINTS:
+            return ["ta", "en"]
+        hints = [h.strip() for h in self.DEEPGRAM_LANGUAGE_HINTS.split(",") if h.strip()]
+        return hints or ["ta", "en"]
+    TTS_PROVIDER: str = "sarvam"  # "sarvam", "elevenlabs", "openai", "mock", "carrier"
+    SARVAM_API_KEY: str | None = None
+    SARVAM_TTS_MODEL: str = "bulbul:v4-flash"
+    SARVAM_VOICE_ID: str = "gokul_ta_narration"  # Default Sarvam Bulbul v4 Flash voice ID
+    SARVAM_TAMIL_SPEAKER: str = "gokul_ta_narration"
+    SARVAM_ENGLISH_SPEAKER: str = "shubh_en_narration_gentle"
+    SARVAM_TELUGU_SPEAKER: str = "tarun_te_narration"
+    SARVAM_TTS_PACE: float = 1.0
+    SARVAM_TTS_ENABLE_PREPROCESSING: bool = True
+    SARVAM_TTS_TIMEOUT: float = 8.0
     ELEVENLABS_API_KEY: str | None = None
     ELEVENLABS_VOICE_ID: str = "EXAVITQu4vr4xnSDxMaL"  # Default premade multilingual voice (Sarah)
     ELEVENLABS_VOICE_ID_TA: str | None = None  # Optional dedicated voice override for Tamil
@@ -151,76 +158,53 @@ class Settings(BaseSettings):
     ELEVENLABS_VOICE_ID_EN: str | None = None  # Optional dedicated voice override for English
     ELEVENLABS_MODEL_ID: str = "eleven_multilingual_v2"
     ENABLE_BARGE_IN: bool = True
-    VAD_ENERGY_THRESHOLD: float = 400.0
-    VAD_SILENCE_TIMEOUT_MS: int = 800
+
+    # Real-Time Voice Activity Detection (VAD) & Noise Suppression
+    VAD_MODE: int = 2  # WebRTC VAD aggressiveness: 0 (normal), 1 (low bitrate), 2 (aggressive), 3 (very aggressive)
+    VAD_ECHO_MODE: int = 3  # Aggressiveness mode during assistant playback or echo tail
+    VAD_ENERGY_THRESHOLD: float = 350.0  # Base energy threshold (RMS amplitude)
+    VAD_SILENCE_TIMEOUT_MS: int = 600  # Silence duration to trigger endpoint detection (preserves natural sentence pauses)
+    VAD_SPEECH_ONSET_FRAMES: int = 5  # Consecutive speech frames required to trigger speech onset (5 frames = 100ms)
+    VAD_ADAPTIVE_SNR_MARGIN: float = 160.0  # Required RMS energy margin above running noise floor (rejects fans/traffic)
+    VAD_NOISE_FLOOR_ALPHA: float = 0.05  # EMA smoothing factor for background noise floor estimation
+    VAD_MAX_ZCR: float = 0.42  # Maximum Zero-Crossing Rate for voiced speech frames (rejects high-freq hiss)
     STREAM_CHUNK_SIZE_BYTES: int = 160  # 20ms at 8000Hz 8-bit mu-law
+    MAX_SPEECH_BUFFER_BYTES: int = 96000  # Safe cap: 6.0 seconds of audio at 8kHz 16-bit linear PCM (16,000 B/s)
+
+    # Silence & Inactivity Management (Prevents premature call termination)
+    CALLER_INACTIVITY_PROMPT_1_SEC: float = 18.0  # Polite check after 18s of caller silence
+    CALLER_INACTIVITY_PROMPT_2_SEC: float = 45.0  # Second polite prompt after 45s of silence
+    CALLER_MAX_INACTIVITY_SEC: float = 180.0  # Maximum caller silence duration before polite conclusion (3 minutes)
+    WS_HEARTBEAT_INTERVAL_SEC: float = 15.0  # WebSocket ping/pong interval to prevent 60-90s edge proxy timeouts
+
+    # Multilingual Telephone Greeting Templates
+    DEFAULT_GREETING_MODE: str = "bilingual"  # "bilingual", "tamil", "english", "auto"
+    GREETING_TEMPLATE_BILINGUAL: str = "வணக்கம்! Welcome to {business_name}. How can I help you today?"
+    GREETING_TEMPLATE_TAMIL: str = "வணக்கம்! {business_name}. உங்களுக்கு எப்படி உதவலாம்?"
+    GREETING_TEMPLATE_ENGLISH: str = "Hello! Thank you for calling {business_name}. How may I help you?"
+    GREETING_TEMPLATE_TANGLISH: str = "Vanakkam! {business_name}. Ungalukku eppadi udhavalam?"
+    GREETING_TEMPLATE_TELUGU: str = "నమస్కారం! {business_name} కు స్వాగతం. నేను మీకు ఎలా సహాయపడగలను?"
+    GREETING_TEMPLATE_TELUGLISH: str = "Namaskaram! {business_name}-ku swagatham. Nenu meeku ela sahayapadagalanu?"
 
     # Barge-In & Acoustic Echo Suppression Parameters
-    BARGE_IN_GRACE_PERIOD_MS: int = 1200  # Suppress barge-in during initial 1.2s of playback to block acoustic echo
-    BARGE_IN_MIN_SPEECH_FRAMES: int = 5  # Minimum consecutive speech frames (5 frames = 100ms)
-    BARGE_IN_ENERGY_THRESHOLD: float = 850.0  # Elevated energy required to interrupt active assistant
-
-    @property
-    def is_smartflo_configured(self) -> bool:
-        """Check whether essential Tata Smartflo credentials are configured."""
-        return bool(
-            self.SMARTFLO_API_TOKEN
-            and self.SMARTFLO_API_TOKEN.strip() != ""
-            and self.SMARTFLO_CALLER_ID
-            and self.SMARTFLO_CALLER_ID.strip() != ""
-        )
-
-    def get_smartflo_did_map(self) -> dict[str, str]:
-        """Return parsed dictionary mapping Smartflo DIDs to business tenant IDs."""
-        mapping: dict[str, str] = {}
-        if self.SMARTFLO_BUSINESS_MAPPING:
-            for pair in self.SMARTFLO_BUSINESS_MAPPING.split(","):
-                pair = pair.strip()
-                if ":" in pair:
-                    did, biz_id = pair.split(":", 1)
-                    if did.strip() and biz_id.strip():
-                        mapping[did.strip()] = biz_id.strip()
-        return mapping
-
-    @property
-    def is_exotel_gateway_configured(self) -> bool:
-        """Check whether Exotel body-payload gateway authentication is configured."""
-        return bool(
-            self.EXOTEL_INTEGRATION_KEY
-            and self.EXOTEL_BUSINESS_ID
-            and self.EXOTEL_INTEGRATION_KEY.strip() != ""
-            and self.EXOTEL_BUSINESS_ID.strip() != ""
-        )
-
-    def get_exotel_key_map(self) -> dict[str, str]:
-        """Return parsed dictionary mapping API keys to business tenant IDs."""
-        mapping: dict[str, str] = {}
-        if self.EXOTEL_BUSINESS_API_KEYS:
-            for pair in self.EXOTEL_BUSINESS_API_KEYS.split(","):
-                pair = pair.strip()
-                if ":" in pair:
-                    k, b = pair.split(":", 1)
-                    if k.strip() and b.strip():
-                        mapping[k.strip()] = b.strip()
-        return mapping
-
-    @property
-    def is_twilio_configured(self) -> bool:
-        """Check whether essential Twilio credentials and phone number are configured."""
-        return bool(
-            self.TWILIO_ACCOUNT_SID
-            and self.TWILIO_AUTH_TOKEN
-            and self.TWILIO_PHONE_NUMBER
-            and self.TWILIO_ACCOUNT_SID.strip() != ""
-            and self.TWILIO_AUTH_TOKEN.strip() != ""
-            and self.TWILIO_PHONE_NUMBER.strip() != ""
-        )
+    BARGE_IN_GRACE_PERIOD_MS: int = 2000  # Suppress barge-in during initial 2000ms of playback to block acoustic onset reflection
+    BARGE_IN_MIN_SPEECH_FRAMES: int = 10  # Minimum consecutive speech frames (10 frames = 200ms) to reject noise clicks
+    BARGE_IN_ENERGY_THRESHOLD: float = 1200.0  # Elevated energy required to interrupt active assistant (rejects echo and room noise)
+    ECHO_SETTLING_WINDOW_MS: int = 500  # Tail window after playback to reject acoustic echo reflections
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:
         """Return explicit database URL if set; otherwise construct PostgreSQL URL from credentials."""
         if self.SQLALCHEMY_DATABASE_URI:
+            uri = self.SQLALCHEMY_DATABASE_URI
+            if uri.startswith("sqlite:///") and not uri.startswith("sqlite:////"):
+                import os
+                # Ensure relative SQLite path reliably points to backend/vattara.db regardless of process launch cwd
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                backend_db = os.path.join(base_dir, "vattara.db").replace("\\", "/")
+                if os.path.exists(backend_db):
+                    return f"sqlite:///{backend_db}"
             return self.SQLALCHEMY_DATABASE_URI
         return (
             f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"

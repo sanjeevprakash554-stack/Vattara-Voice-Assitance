@@ -1,6 +1,7 @@
 """Deterministic intelligent Mock LLM Provider for unit/integration testing and zero-cost offline execution."""
 
 from datetime import date, datetime, timedelta, timezone
+import json
 import re
 from typing import Any
 
@@ -18,10 +19,10 @@ logger = get_logger(__name__)
 
 # Service aliases for intelligent semantic matching in English, Tamil, and Telugu
 SERVICE_KEYWORD_MAP: dict[str, list[str]] = {
-    "cardio": ["cardio", "cardiology", "heart", "ecg", "cardiac", "இதயம்", "நெஞ்சு", "idhayam", "heart problem", "గుండె", "కార్డియాలజీ", "gunde", "gunde noppi"],
+    "cardio": ["cardio", "cardiology", "heart", "ecg", "cardiac", "கார்டியாலஜி", "இதயம்", "நெஞ்சு", "idhayam", "heart problem", "గుండె", "కార్డియాలజీ", "gunde", "gunde noppi"],
     "physician": ["physician", "general physician", "general medicine", "internal medicine", "பொது மருத்துவம்", "maruthuvar", "maruthuvam", "సాధారణ వైద్యం", "వైద్యుడు", "vaidhyudu", "vaidyudu", "doctoru"],
-    "pediatric": ["pediatric", "pediatrician", "child", "baby", "kid", "vaccine", "குழந்தை", "kuzhandhai", "paappa", "పిల్లల", "పిల్లలు", "pillalu", "chinna pillalu"],
-    "dental": ["dental", "dentist", "teeth", "tooth", "cleaning", "cavity", "பல்", "pal", "pal vali", "పళ్ళు", "దంత", "పంటి నొప్పి", "pallu", "panti noppi"],
+    "pediatric": ["pediatric", "pediatrician", "child", "baby", "kid", "vaccine", "பீடியாட்ரிக்", "குழந்தை", "kuzhandhai", "paappa", "పిల్లల", "పిల్లలు", "pillalu", "chinna pillalu"],
+    "dental": ["dental", "dentist", "teeth", "tooth", "cleaning", "cavity", "டென்டல்", "பல்", "pal", "pal vali", "పళ్ళు", "దంత", "పంటి నొప్పి", "pallu", "panti noppi"],
     "diagnostics": ["blood test", "diagnostic", "diagnostics", "lab test", "lipid", "பரிசோதனை", "raththam", "blood", "రక్త పరీక్ష", "పరీక్ష", "raktha pareeksha"],
 }
 
@@ -138,6 +139,110 @@ class MockLLMProvider(BaseLLMProvider):
                 tool_calls=tool_calls,
             )
 
+        # 8b. Transfer to Human Desk
+        if intent == "transfer_to_human":
+            tool_calls = [
+                FunctionCallRequest(
+                    id="call_transfer_1",
+                    function_name="transfer_to_human",
+                    arguments={"reason": "Caller requested human assistance"},
+                )
+            ]
+            ack = "Transferring your call to our front desk receptionist. Please hold on."
+            if detected_lang == "ta-IN":
+                ack = "உங்கள் அழைப்பை எங்கள் வரவேற்பு மையத்திற்கு இணைக்கிறேன். காத்திருக்கவும்."
+            elif detected_lang == "ta-Latn":
+                ack = "Front desk receptionist-ku transfer panren. Please hold on."
+            elif detected_lang == "te-IN":
+                ack = "మీ కాల్‌ను మా రిసెప్షన్‌కు బదిలీ చేస్తున్నాను. వేచి ఉండండి."
+            elif detected_lang == "te-Latn":
+                ack = "Front desk receptionist-ki transfer chestunnanu. Please hold on."
+            return LLMResponse(
+                text=ack,
+                intent="transfer_to_human",
+                detected_language=detected_lang,
+                extracted_entities=entities,
+                tool_calls=tool_calls,
+            )
+
+        # 8c. Query Doctors / Staff
+        if intent == "get_doctors":
+            tool_calls = [
+                FunctionCallRequest(
+                    id="call_doc_1",
+                    function_name="get_doctors",
+                    arguments={"doctor_name": entities.doctor_or_staff_name or ""},
+                )
+            ]
+            ack = "Let me check our doctor and practitioner schedules. One moment please."
+            if detected_lang == "ta-IN":
+                ack = "மருத்துவர்களின் பணி அட்டவணையை சரிபார்க்கிறேன். ஒரு நிமிடம்."
+            elif detected_lang == "ta-Latn":
+                ack = "Doctors availability check panren. Oru nimisham irunga."
+            elif detected_lang == "te-IN":
+                ack = "వైద్యుల సమయ వేళలను పరిశీలిస్తున్నాను. ఒక్క క్షణం."
+            elif detected_lang == "te-Latn":
+                ack = "Doctors availability check chestunnanu. One moment please."
+            return LLMResponse(
+                text=ack,
+                intent="get_doctors",
+                detected_language=detected_lang,
+                extracted_entities=entities,
+                tool_calls=tool_calls,
+            )
+
+        # 8d. Query Business Info / Address
+        if intent == "get_business_info":
+            tool_calls = [
+                FunctionCallRequest(
+                    id="call_biz_1",
+                    function_name="get_business_info",
+                    arguments={},
+                )
+            ]
+            ack = "Let me retrieve our clinic address and details."
+            if detected_lang == "ta-IN":
+                ack = "எங்கள் மருத்துவமனை விவரங்களை வழங்குகிறேன்."
+            elif detected_lang == "ta-Latn":
+                ack = "Clinic details paarkiren. One moment please."
+            elif detected_lang == "te-IN":
+                ack = "మా క్లినిక్ వివరాలను పరిశీలిస్తున్నాను."
+            elif detected_lang == "te-Latn":
+                ack = "Clinic details check chestunnanu. One moment please."
+            return LLMResponse(
+                text=ack,
+                intent="get_business_info",
+                detected_language=detected_lang,
+                extracted_entities=entities,
+                tool_calls=tool_calls,
+            )
+
+        # 8e. Query Services and Working Hours
+        if intent == "get_services_and_hours":
+            tool_calls = [
+                FunctionCallRequest(
+                    id="call_srv_1",
+                    function_name="get_services_and_hours",
+                    arguments={},
+                )
+            ]
+            ack = "Let me check our active services and operating hours."
+            if detected_lang == "ta-IN":
+                ack = "எங்கள் மருத்துவ சேவைகள் மற்றும் வேலை நேரங்களை சரிபார்க்கிறேன்."
+            elif detected_lang == "ta-Latn":
+                ack = "Services and working hours check panren. One moment please."
+            elif detected_lang == "te-IN":
+                ack = "మా వైద్య సేవలు మరియు పని వేళలను పరిశీలిస్తున్నాను."
+            elif detected_lang == "te-Latn":
+                ack = "Services and working hours check chestunnanu. One moment please."
+            return LLMResponse(
+                text=ack,
+                intent="get_services_and_hours",
+                detected_language=detected_lang,
+                extracted_entities=entities,
+                tool_calls=tool_calls,
+            )
+
         # 9. Appointment Booking Flow (Slot filling & Tool invocation)
         if intent in ("book_appointment", "confirmation", "greeting", "unknown"):
             # Check what's missing
@@ -221,6 +326,30 @@ class MockLLMProvider(BaseLLMProvider):
             return "cancellation"
 
         if any(w in text for w in [
+            "transfer to human", "speak to human", "speak to receptionist", "speak with receptionist", "human receptionist", "real person", "connect to front desk",
+        ]):
+            return "transfer_to_human"
+
+        if any(w in text for w in [
+            "which doctors", "who is the doctor", "doctor list", "doctors available", "doctor timings", "doctor availability", "who is available",
+            "மருத்துவர்கள்", "டாக்டர்கள்", "doctors yaar", "వైద్యులు", "డాక్టర్లు", "doctors evaru",
+        ]):
+            return "get_doctors"
+
+        if any(w in text for w in [
+            "where are you located", "where is the clinic", "clinic address", "what is your address", "location of clinic",
+            "முகவரி", "எங்கே உள்ளது", "engirukku", "చిరునామా", "ఎక్కడ ఉంది", "ekkada undi",
+        ]):
+            return "get_business_info"
+
+        if any(w in text for w in [
+            "what services", "list of services", "what are your services", "working hours", "timings", "opening hours",
+            "வேலை நேரம்", "சேவைகள்", "எத்தனை மணிக்கு திறக்கும்", "எப்போது திறக்கும்", "திறக்கும் நேரம்", "திறக்கும்",
+            "ethana maniki thirakkum", "పని వేళలు", "సేవలు", "eppudu therustharu",
+        ]):
+            return "get_services_and_hours"
+
+        if any(w in text for w in [
             "cancel appointment", "cancel my appointment", "appointment cancel",
             "ரத்து", "cancel pannanum",
             "రద్దు", "రద్దు చేయండి", "cancel cheyandi", "raddhu cheyandi", "cancel cheyali",
@@ -235,7 +364,8 @@ class MockLLMProvider(BaseLLMProvider):
 
         if any(w in text for w in [
             "slots", "available", "availability", "when can i", "open", "நேரம் இருக்கிறதா", "slot iruka", "neram iruka",
-            "స్లాట్లు ఉన్నాయా", "సమయం ఉందా", "slots unnaya", "time undha", "available undha",
+            "டாக்டர் இருக்கிறாரா", "மருத்துவர் இருக்கிறாரா", "டாக்டர் இருப்பாரா", "doctor irukaara", "doctor irukangala",
+            "స్లాట్లు ఉన్నాయా", "సమయం ఉందా", "slots unnaya", "time undha", "available undha", "doctor unnara",
         ]):
             return "check_availability"
 
@@ -366,12 +496,12 @@ class MockLLMProvider(BaseLLMProvider):
             r"(?:naa peru|na peru)\s+([A-Za-z\s]+)",
         ]
         for pat in name_patterns:
-            m = re.search(pat, combined, re.IGNORECASE)
+            m = re.search(pat, latest_text, re.IGNORECASE) or re.search(pat, combined, re.IGNORECASE)
             if m:
-                cand = re.sub(r"[^\w\s]", "", m.group(1)).strip().split()
-                filtered = [w for w in cand if w.lower() not in {"and", "i", "want", "to", "book", "please", "consultation"}]
+                cand = re.sub(r"[^\w\s\u0B80-\u0BFF\u0C00-\u0C7F]", "", m.group(1)).strip().split()
+                filtered = [w for w in cand if w.lower() not in {"and", "i", "want", "to", "book", "please", "consultation", "en", "peyar", "peru", "oru"}]
                 if filtered:
-                    entities.customer_name = " ".join(filtered[:3]).title()
+                    entities.customer_name = " ".join(filtered[:2]).strip()
                     break
 
         return entities
@@ -585,6 +715,71 @@ class MockLLMProvider(BaseLLMProvider):
                 msg = "Your appointment has been successfully cancelled and the slot has been released. Goodbye!"
 
             return LLMResponse(text=msg, intent="cancel_appointment", detected_language=lang, should_hangup=True)
+
+        # Transfer Desk Result
+        if data.get("action") == "transfer":
+            num = data.get("transfer_number", "our front desk")
+            if lang == "ta-IN":
+                msg = f"உங்கள் அழைப்பை வரவேற்பு மையத்திற்கு ({num}) இணைக்கிறேன். காத்திருக்கவும்."
+            elif lang == "ta-Latn":
+                msg = f"Transferring your call to front desk ({num}). One moment please."
+            elif lang == "te-IN":
+                msg = f"మీ కాల్‌ను రిసెప్షన్ ({num}) కు బదిలీ చేస్తున్నాను. వేచి ఉండండి."
+            elif lang == "te-Latn":
+                msg = f"Transferring call to front desk ({num}). One moment please."
+            else:
+                msg = f"Transferring your call to our front desk receptionist at {num}. Please hold on."
+            return LLMResponse(text=msg, intent="transfer_to_human", detected_language=lang, should_hangup=True)
+
+        # Doctor Schedules Result
+        if "doctors" in data:
+            docs = data.get("doctors", [])
+            doc_strs = [f"{d['name']}" for d in docs]
+            doc_list_text = ", ".join(doc_strs) if doc_strs else "General Duty Physicians"
+            if lang == "ta-IN":
+                msg = f"எங்கள் மருத்துவமனையில் இருக்கும் மருத்துவர்கள்: {doc_list_text}. இவர்களில் யாருடன் முன்பதிவு செய்ய வேண்டும்?"
+            elif lang == "ta-Latn":
+                msg = f"Our doctors: {doc_list_text}. Yaaroda appointment book panna virumbureenga?"
+            elif lang == "te-IN":
+                msg = f"మా క్లినిక్ వైద్యులు: {doc_list_text}. వీరిలో ఎవరితో అపాయింట్‌మెంట్ కావాలి?"
+            elif lang == "te-Latn":
+                msg = f"Our doctors: {doc_list_text}. Evaritho appointment book chesukovali anukuntunnaru?"
+            else:
+                msg = f"Our medical practitioners include: {doc_list_text}. Which doctor would you like to schedule with?"
+            return LLMResponse(text=msg, intent="get_doctors", detected_language=lang)
+
+        # Business Info / Address Result
+        if "address" in data and "vertical" in data:
+            biz_name = data.get("name", "Our clinic")
+            addr = data.get("address", "address on file")
+            ph = data.get("phone", "")
+            if lang == "ta-IN":
+                msg = f"{biz_name} அமைந்துள்ள முகவரி: {addr}. தொடர்பு எண்: {ph}."
+            elif lang == "ta-Latn":
+                msg = f"{biz_name} address: {addr}. Phone: {ph}."
+            elif lang == "te-IN":
+                msg = f"{biz_name} చిరునామా: {addr}. ఫోన్ నంబర్: {ph}."
+            elif lang == "te-Latn":
+                msg = f"{biz_name} address: {addr}. Phone: {ph}."
+            else:
+                msg = f"{biz_name} is located at {addr}. Our contact phone number is {ph}."
+            return LLMResponse(text=msg, intent="get_business_info", detected_language=lang)
+
+        # Services and Operating Schedule Result
+        if "services" in data and "operating_schedule" in data:
+            srvs = [s["name"] for s in data.get("services", [])[:3]]
+            srv_str = ", ".join(srvs) if srvs else "Consultations"
+            if lang == "ta-IN":
+                msg = f"நாங்கள் வழங்கும் சேவைகள்: {srv_str}. எங்கள் வேலை நேரம் திங்கள் முதல் சனி வரை காலை 9 மணி முதல் மாலை 6 மணி வரை."
+            elif lang == "ta-Latn":
+                msg = f"We offer {srv_str}. Working hours are Mon-Sat 9 AM to 6 PM."
+            elif lang == "te-IN":
+                msg = f"మేము అందించే సేవలు: {srv_str}. మా పని వేళలు సోమవారం నుండి శనివారం వరకు ఉదయం 9 నుండి సాయంత్రం 6 వరకు."
+            elif lang == "te-Latn":
+                msg = f"We offer {srv_str}. Working hours are Mon-Sat 9 AM to 6 PM."
+            else:
+                msg = f"We provide {srv_str}, operating Monday through Saturday from 9 AM to 6 PM."
+            return LLMResponse(text=msg, intent="get_services_and_hours", detected_language=lang)
 
         # Tool Error Result
         if "error" in data:

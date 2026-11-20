@@ -15,8 +15,10 @@ from app.models.availability import (
     BusinessHoliday,
     SpecialDateOverride,
 )
+from app.models.business import Business
 from app.models.business_hours import BusinessHour
 from app.models.customer import Customer
+from app.models.staff_schedule import StaffSchedule
 from app.schemas.appointment import AppointmentCreate
 from app.services.appointment_service import book_appointment_core
 from app.services.dashboard_events import dashboard_event_manager
@@ -25,8 +27,10 @@ from app.services.scheduling_service import (
     cancel_appointment_core,
     find_alternative_slots,
     get_all_operating_hours,
+    get_business_timezone,
     reschedule_appointment_core,
 )
+from app.services.telephony.phone_utils import normalize_indian_mobile_number
 
 logger = get_logger(__name__)
 
@@ -128,6 +132,33 @@ AI_TOOLS_SPEC: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "get_doctors",
+            "description": "Retrieve list of doctors, staff members, specialties, and their working schedules.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doctor_name": {
+                        "type": "string",
+                        "description": "Optional name or specialty of a specific doctor to query.",
+                    }
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_business_info",
+            "description": "Retrieve clinic or business information such as address, contact phone, email, facilities, and general clinic overview.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "transfer_to_human",
             "description": "Transfer caller to human receptionist or emergency contact desk.",
             "parameters": {
@@ -135,6 +166,27 @@ AI_TOOLS_SPEC: list[dict[str, Any]] = [
                 "properties": {
                     "reason": {"type": "string", "description": "Reason for transferring to human staff."},
                 },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_medical_information",
+            "description": "Retrieve medically reviewed clinical guidance, safe home care, red flag warnings, relevant diagnostic tests, and doctor department recommendations for symptoms or health queries. Grounded in WHO, MoHFW, and ICMR protocols.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The symptom, medical condition, or clinical question mentioned by the caller (e.g., 'fever and cough', 'diabetes checkup', 'HbA1c test', 'headache', 'skin rash', 'child fever').",
+                    },
+                    "caller_language": {
+                        "type": "string",
+                        "description": "Optional caller language code (e.g. 'ta-Latn', 'ta-IN', 'en-IN').",
+                    },
+                },
+                "required": ["query"],
             },
         },
     },
@@ -209,9 +261,17 @@ def execute_tool_call(
             except ValueError:
                 return {"error": f"Invalid ISO datetime '{appt_time_raw}'."}
 
+            business = db.get(Business, business_id)
+            biz_tz = get_business_timezone(business) if business else timezone.utc
+            if parsed_dt.tzinfo is None:
+                parsed_dt = parsed_dt.replace(tzinfo=biz_tz)
+
+            raw_phone = arguments.get("customer_phone")
+            norm_phone = normalize_indian_mobile_number(raw_phone) if raw_phone else None
+
             booking_payload = AppointmentCreate(
                 customer_name=arguments.get("customer_name"),
-                customer_phone=arguments.get("customer_phone"),
+                customer_phone=norm_phone or raw_phone,
                 service_id=arguments.get("service_id"),
                 appointment_time=parsed_dt,
                 source="ai_call",
@@ -235,6 +295,33 @@ def execute_tool_call(
                     enforce_past_check=True,
                 )
             except HTTPException as exc:
+                # Idempotency check: if customer already booked this exact slot (e.g. retry during turn), return existing appointment
+                if exc.status_code == 409 and "already has an appointment" in str(exc.detail).lower() and booking_payload.customer_phone:
+                    from app.services.scheduling_service import ACTIVE_APPOINTMENT_STATUSES
+                    existing_appt = (
+                        db.query(Appointment)
+                        .join(Customer, Appointment.customer_id == Customer.id)
+                        .filter(
+                            Appointment.business_id == business_id,
+                            Appointment.status.in_(ACTIVE_APPOINTMENT_STATUSES),
+                            Customer.phone == booking_payload.customer_phone.strip(),
+                        )
+                        .order_by(Appointment.created_at.desc())
+                        .first()
+                    )
+                    if existing_appt:
+                        logger.info("Idempotent booking hit for CallSid %s: Reusing existing appointment ID %s", arguments.get("call_id"), existing_appt.id)
+                        return {
+                            "success": True,
+                            "appointment_id": existing_appt.id,
+                            "customer_name": booking_payload.customer_name,
+                            "service_name": getattr(existing_appt.service, "name", "Consultation") if existing_appt.service else "Consultation",
+                            "appointment_time": existing_appt.appointment_time.isoformat(),
+                            "status": existing_appt.status,
+                            "already_booked": True,
+                            "message": f"Appointment already confirmed with ID {existing_appt.id}.",
+                        }
+
                 alternatives = find_alternative_slots(
                     db=db,
                     business_id=business_id,
@@ -275,8 +362,15 @@ def execute_tool_call(
 
         # 3. Reschedule Appointment
         elif function_name == "reschedule_appointment":
-            customer_phone = arguments.get("customer_phone", "").strip()
-            new_time_raw = arguments.get("new_appointment_time")
+            raw_phone = arguments.get("customer_phone", "").strip()
+            customer_phone = normalize_indian_mobile_number(raw_phone) or raw_phone
+            phone_variants = [customer_phone]
+            if customer_phone.startswith("+91"):
+                phone_variants.extend([customer_phone.replace("+91", "91"), customer_phone.replace("+91", "")])
+            elif customer_phone.startswith("91"):
+                phone_variants.extend([f"+{customer_phone}", customer_phone[2:]])
+
+            new_time_raw = arguments.get("new_appointment_time") or arguments.get("new_date_time")
             appointment_id = arguments.get("appointment_id")
             reason = arguments.get("reason", "Customer requested reschedule via voice AI.")
 
@@ -288,6 +382,11 @@ def execute_tool_call(
             except ValueError:
                 return {"error": f"Invalid ISO datetime '{new_time_raw}'."}
 
+            business = db.get(Business, business_id)
+            biz_tz = get_business_timezone(business) if business else timezone.utc
+            if new_dt.tzinfo is None:
+                new_dt = new_dt.replace(tzinfo=biz_tz)
+
             # If appointment_id is not given, find the most recent active appointment for customer
             if not appointment_id and customer_phone:
                 active_appt = db.scalar(
@@ -295,7 +394,7 @@ def execute_tool_call(
                     .join(Customer, Appointment.customer_id == Customer.id)
                     .where(
                         Appointment.business_id == business_id,
-                        Customer.phone == customer_phone,
+                        Customer.phone.in_(phone_variants),
                         Appointment.status.in_(["upcoming", "confirmed", "rescheduled"]),
                     )
                     .order_by(Appointment.appointment_time.asc())
@@ -351,7 +450,14 @@ def execute_tool_call(
 
         # 4. Cancel Appointment
         elif function_name == "cancel_appointment":
-            customer_phone = arguments.get("customer_phone", "").strip()
+            raw_phone = arguments.get("customer_phone", "").strip()
+            customer_phone = normalize_indian_mobile_number(raw_phone) or raw_phone
+            phone_variants = [customer_phone]
+            if customer_phone.startswith("+91"):
+                phone_variants.extend([customer_phone.replace("+91", "91"), customer_phone.replace("+91", "")])
+            elif customer_phone.startswith("91"):
+                phone_variants.extend([f"+{customer_phone}", customer_phone[2:]])
+
             appointment_id = arguments.get("appointment_id")
             reason = arguments.get("reason", "Customer requested cancellation via voice AI.")
 
@@ -362,7 +468,7 @@ def execute_tool_call(
                     .join(Customer, Appointment.customer_id == Customer.id)
                     .where(
                         Appointment.business_id == business_id,
-                        Customer.phone == customer_phone,
+                        Customer.phone.in_(phone_variants),
                         Appointment.status.in_(["upcoming", "confirmed", "rescheduled"]),
                     )
                     .order_by(Appointment.appointment_time.asc())
@@ -427,6 +533,107 @@ def execute_tool_call(
                 "transfer_number": fallback_num,
                 "reason": reason,
                 "message": "Transferring call to clinic front desk receptionist.",
+            }
+
+        # 7. Get Doctors / Staff
+        elif function_name == "get_doctors":
+            doc_query = (arguments.get("doctor_name") or "").strip().lower()
+            stmt = select(StaffSchedule).where(
+                StaffSchedule.business_id == business_id,
+                StaffSchedule.is_active.is_(True),
+            )
+            schedules = db.scalars(stmt).all()
+            day_map = {0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday", 4: "Friday", 5: "Saturday", 6: "Sunday"}
+
+            doctors_map: dict[str, dict[str, Any]] = {}
+            for s in schedules:
+                if doc_query and doc_query not in s.staff_name.lower():
+                    continue
+                if s.staff_name not in doctors_map:
+                    doctors_map[s.staff_name] = {
+                        "name": s.staff_name,
+                        "slot_duration_minutes": s.slot_duration_minutes,
+                        "available_days": [],
+                    }
+                doctors_map[s.staff_name]["available_days"].append({
+                    "day": day_map.get(s.day_of_week, str(s.day_of_week)),
+                    "start": s.start_time,
+                    "end": s.end_time,
+                })
+
+            doctors_list = list(doctors_map.values())
+            if not doctors_list:
+                doctors_list = [{"name": "Duty Medical Practitioner / Pediatrician", "availability": "Regular clinic operating hours"}]
+            return {"doctors": doctors_list}
+
+        # 8. Get Business Info
+        elif function_name == "get_business_info":
+            biz = db.scalar(select(Business).where(Business.id == business_id))
+            assistant = db.scalar(select(AssistantConfig).where(AssistantConfig.business_id == business_id))
+            if not biz:
+                return {"error": "Business not found."}
+            return {
+                "name": biz.name,
+                "vertical": biz.vertical,
+                "phone": biz.phone,
+                "email": biz.email,
+                "address": biz.address or "Address on file",
+                "timezone": biz.timezone,
+                "business_info": assistant.business_info if assistant and assistant.business_info else None,
+            }
+
+        # 9. Get Medical Information
+        elif function_name == "get_medical_information":
+            from app.services.ai.medical_knowledge import (
+                get_medical_guidance_for_response,
+                query_medical_knowledge,
+            )
+
+            query = (arguments.get("query") or "").strip()
+            caller_lang = arguments.get("caller_language", "en-IN")
+            if not query:
+                return {"error": "Missing 'query' parameter."}
+
+            topic = query_medical_knowledge(query, caller_lang)
+            if not topic:
+                return {
+                    "found": False,
+                    "message": "No specific clinical guideline matched. Recommend direct doctor consultation for physical examination.",
+                    "recommended_specialty": "General Physician",
+                }
+
+            services = db.scalars(
+                select(Service).where(Service.business_id == business_id, Service.is_active.is_(True))
+            ).all()
+            srv_dicts = [
+                {"id": s.id, "name": s.name, "price": s.price, "duration_minutes": s.duration_minutes}
+                for s in services
+            ]
+            staff = db.scalars(
+                select(StaffSchedule).where(StaffSchedule.business_id == business_id, StaffSchedule.is_active.is_(True))
+            ).all()
+            staff_dicts = [{"name": s.staff_name, "specialty": s.staff_name} for s in staff]
+
+            guidance = get_medical_guidance_for_response(
+                topic=topic,
+                language=caller_lang,
+                matching_services=srv_dicts,
+                matching_doctors=staff_dicts,
+            )
+            return {
+                "found": True,
+                "topic": topic.id,
+                "category": topic.category,
+                "specialty": topic.recommended_specialty,
+                "explanation": guidance["explanation"],
+                "home_care": guidance["home_care"],
+                "red_flags": guidance["red_flags"],
+                "triage_question": guidance["triage_question"],
+                "disclaimer": guidance["disclaimer"],
+                "relevant_tests": guidance["relevant_tests"],
+                "matched_service": guidance["matched_service"],
+                "matched_doctor": guidance["matched_doctor"],
+                "source": guidance["source"],
             }
 
         else:

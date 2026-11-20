@@ -182,7 +182,7 @@ def process_due_reminders(
         db.commit()
 
         # 5. Dispatch Outbound Call via Telephony Adapter
-        telephony_provider = "twilio" if settings.is_twilio_configured else "smartflo"
+        telephony_provider = "plivo"
         logger.info(
             "Dispatching outbound reminder call to %s via %s (Reminder ID: %s)",
             mask_phone(customer.phone),

@@ -1,12 +1,9 @@
 """Common API dependencies for dependency injection in endpoints."""
 
-import hmac
 from collections.abc import Generator
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
 from sqlalchemy.orm import Session
-from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import decode_access_token
 from app.database.connection import get_db
@@ -22,40 +19,15 @@ def get_db_session() -> Generator[Session, None, None]:
     yield from get_db()
 
 
-def resolve_business_by_api_key(api_key: str, db: Session) -> Business | None:
-    """Resolve active business tenant from an authenticated API key or return None."""
-    if not api_key:
-        return None
-
-    clean_key = api_key.strip()
-
-    # 1. Check multi-tenant business key map from settings (key:business_id) using constant-time comparison
-    key_map = settings.get_exotel_key_map()
-    for configured_key, target_biz_id in key_map.items():
-        if hmac.compare_digest(clean_key, configured_key):
-            return db.scalar(
-                select(Business).where(Business.id == target_biz_id, Business.is_active.is_(True))
-            )
-
-    # 2. Check platform/default EXOTEL_API_KEY using constant-time comparison
-    if settings.EXOTEL_API_KEY and hmac.compare_digest(clean_key, settings.EXOTEL_API_KEY):
-        return db.scalar(select(Business).where(Business.is_active.is_(True)).limit(1))
-
-    return None
-
-
 def get_current_user(
     auth_header: HTTPAuthorizationCredentials | None = Depends(security),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
     db: Session = Depends(get_db_session),
 ) -> User:
-    """Validate Bearer JWT or Server-to-Server API Key and return current active user."""
+    """Validate Bearer JWT and return current active user."""
     raw_token: str | None = None
 
     if auth_header and auth_header.credentials:
         raw_token = auth_header.credentials.strip()
-    elif x_api_key:
-        raw_token = x_api_key.strip()
 
     if not raw_token:
         raise HTTPException(
@@ -64,44 +36,7 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # --------------------------------------------------------------------------
-    # Check for Server-to-Server API Key (Exotel)
-    # --------------------------------------------------------------------------
-    key_map = settings.get_exotel_key_map()
-    is_api_key = (
-        any(hmac.compare_digest(raw_token, k) for k in key_map.keys())
-        or bool(settings.EXOTEL_API_KEY and hmac.compare_digest(raw_token, settings.EXOTEL_API_KEY))
-        or (raw_token.startswith("vat_") and raw_token.count(".") != 2)
-    )
-
-    if is_api_key:
-        business = resolve_business_by_api_key(raw_token, db)
-        if not business:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid API key or unauthorized business tenant.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        # Resolve primary active user for this tenant to represent server session
-        tenant_user = db.scalar(
-            select(User)
-            .where(User.business_id == business.id, User.is_active.is_(True))
-            .order_by(User.created_at.asc())
-            .limit(1)
-        )
-        if not tenant_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="No active user found for this business organization.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        return tenant_user
-
-    # --------------------------------------------------------------------------
     # Standard User JWT Authentication (Dashboard)
-    # --------------------------------------------------------------------------
     payload = decode_access_token(raw_token)
     if not payload:
         raise HTTPException(

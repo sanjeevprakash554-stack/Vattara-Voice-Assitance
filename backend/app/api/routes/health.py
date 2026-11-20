@@ -12,9 +12,9 @@ from app.database.connection import engine, ping_database
 from app.schemas.health import (
     DatabaseHealthResponse,
     HealthResponse,
-    TwilioHealthResponse,
+    PlivoHealthResponse,
 )
-from app.services.twilio_service import TwilioService, get_twilio_service
+from app.services.plivo_service import PlivoService, get_plivo_service
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -28,7 +28,25 @@ router = APIRouter()
     description="Check whether the backend service is running and responsive.",
 )
 def get_health() -> HealthResponse:
-    """Return backend operational status."""
+    """Return backend liveness and basic runtime metadata."""
+    return HealthResponse(
+        status="healthy",
+        app_name=settings.PROJECT_NAME,
+        version=settings.VERSION,
+        environment=settings.ENVIRONMENT,
+        timestamp=datetime.now(timezone.utc),
+    )
+
+
+@router.get(
+    "/live",
+    response_model=HealthResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Kubernetes Liveness Probe",
+    description="Quick check confirming the FastAPI process is alive and receiving HTTP traffic.",
+)
+def get_liveness() -> HealthResponse:
+    """Lightweight probe verifying the event loop is active."""
     return HealthResponse(
         status="healthy",
         app_name=settings.PROJECT_NAME,
@@ -41,23 +59,24 @@ def get_health() -> HealthResponse:
 @router.get(
     "/database",
     response_model=DatabaseHealthResponse,
+    status_code=status.HTTP_200_OK,
     responses={
         200: {
             "model": DatabaseHealthResponse,
-            "description": "Database connection is healthy and responsive.",
+            "description": "Database connection verified successfully.",
         },
         503: {
             "model": DatabaseHealthResponse,
-            "description": "Database connection failed or unreachable.",
+            "description": "Database connection failed or timed out.",
         },
     },
-    summary="Database Health Status",
-    description="Execute a test query against PostgreSQL to verify connectivity.",
+    summary="Database Connectivity Health Check",
+    description="Actively ping the configured PostgreSQL/SQLite database with 'SELECT 1'.",
 )
 def get_database_health(
     db: Session = Depends(get_db_session),
 ) -> DatabaseHealthResponse | JSONResponse:
-    """Verify live database connectivity by running a lightweight query."""
+    """Verify database connection pool and execute active probe query."""
     now = datetime.now(timezone.utc)
     dialect_name = engine.dialect.name
 
@@ -67,12 +86,12 @@ def get_database_health(
             status="healthy",
             database="connected",
             dialect=dialect_name,
-            details="Database ping query succeeded (SELECT 1).",
+            details=f"Successfully pinged {dialect_name} database.",
             timestamp=now,
             error=None,
         )
     except Exception as exc:
-        logger.error("Database health check failed: %s", exc, exc_info=True)
+        logger.error("Database health check failed: %s", exc)
         failure_payload = DatabaseHealthResponse(
             status="unhealthy",
             database="disconnected",
@@ -88,43 +107,42 @@ def get_database_health(
 
 
 @router.get(
-    "/twilio",
-    response_model=TwilioHealthResponse,
+    "/plivo",
+    response_model=PlivoHealthResponse,
     status_code=status.HTTP_200_OK,
     responses={
         200: {
-            "model": TwilioHealthResponse,
-            "description": "Twilio configuration and connectivity status retrieved.",
+            "model": PlivoHealthResponse,
+            "description": "Plivo configuration and connectivity status retrieved.",
         },
         503: {
-            "model": TwilioHealthResponse,
-            "description": "Twilio credentials configured but connection failed or invalid.",
+            "model": PlivoHealthResponse,
+            "description": "Plivo credentials configured but connection failed or invalid.",
         },
     },
-    summary="Twilio Health & Configuration Status",
-    description="Verify Twilio credentials, Account SID authentication, and configured phone numbers.",
+    summary="Plivo Health & Configuration Status",
+    description="Verify Plivo credentials, Auth ID authentication, and configured phone numbers.",
 )
-def get_twilio_health(
-    twilio_service: TwilioService = Depends(get_twilio_service),
-) -> TwilioHealthResponse | JSONResponse:
-    """Verify Twilio telephony credentials and API connectivity."""
-    result = twilio_service.check_connection()
+def get_plivo_health(
+    plivo_service: PlivoService = Depends(get_plivo_service),
+) -> PlivoHealthResponse | JSONResponse:
+    """Verify Plivo telephony credentials and API connectivity."""
+    result = plivo_service.check_connection()
     now = datetime.now(timezone.utc)
 
-    response_payload = TwilioHealthResponse(
+    response_payload = PlivoHealthResponse(
         status=result["status"],
         configured=result["configured"],
-        account_sid_masked=result.get("account_sid_masked"),
+        auth_id_masked=result.get("auth_id_masked"),
         account_name=result.get("account_name"),
-        account_status=result.get("account_status"),
         phone_number=result.get("phone_number"),
-        public_base_url=result.get("public_base_url"),
-        details=result["details"],
+        public_base_url=settings.PUBLIC_BASE_URL,
+        details=result.get("message") or "Plivo status checked.",
         timestamp=now,
         error=result.get("error"),
     )
 
-    if result["status"] == "error":
+    if result["status"] == "failed":
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=response_payload.model_dump(mode="json"),

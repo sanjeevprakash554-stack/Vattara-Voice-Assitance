@@ -60,7 +60,7 @@ SAAS_PLANS = [
             "Real-time WebSocket Bidirectional Audio Streaming",
             "Doctor Shift & Break Scheduling Engine",
             "Automated 24h & 2h AI Voice Reminder Calling",
-            "Twilio & Tata Smartflo Telephony Integration",
+            "Plivo Programmable Voice Telephony Integration",
             "Up to 10 Staff & Doctor User Accounts",
             "Priority Telephony Support (99.9% SLA)",
         ],

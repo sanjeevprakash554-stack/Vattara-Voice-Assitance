@@ -23,12 +23,47 @@ import {
   Sparkle,
   Layers,
   ListOrdered,
+  Info,
+  FileText,
+  Mail,
+  IndianRupee,
+  MessageSquare,
 } from 'lucide-react';
 import Badge from '../../components/common/Badge';
 import Modal from '../../components/common/Modal';
 import { appointmentsService, customersService, assistantService } from '../../services/api';
 import { useDashboardWebSocket } from '../../context/DashboardWebSocketContext';
 import confetti from 'canvas-confetti';
+
+const BUSINESS_TIMEZONE = 'Asia/Kolkata';
+
+export const formatAppointmentTime = (dateStr) => {
+  if (!dateStr) return '';
+  const normalized = (typeof dateStr === 'string' && !dateStr.endsWith('Z') && !dateStr.includes('+'))
+    ? dateStr.replace(' ', 'T') + 'Z'
+    : dateStr;
+  const d = new Date(normalized);
+  return d.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: BUSINESS_TIMEZONE,
+  });
+};
+
+export const formatAppointmentDate = (dateStr) => {
+  if (!dateStr) return '';
+  const normalized = (typeof dateStr === 'string' && !dateStr.endsWith('Z') && !dateStr.includes('+'))
+    ? dateStr.replace(' ', 'T') + 'Z'
+    : dateStr;
+  const d = new Date(normalized);
+  return d.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: BUSINESS_TIMEZONE,
+  });
+};
 
 export default function Appointments() {
   const { subscribe, isConnected } = useDashboardWebSocket();
@@ -69,6 +104,30 @@ export default function Appointments() {
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [rescheduleError, setRescheduleError] = useState(null);
   const [newTime, setNewTime] = useState('');
+
+  // View Details Modal
+  const [detailsModal, setDetailsModal] = useState(false);
+  const [selectedDetailAppt, setSelectedDetailAppt] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
+  const handleOpenDetails = async (appt) => {
+    if (!appt) return;
+    setSelectedDetailAppt(appt);
+    setDetailsModal(true);
+    if (appt.id) {
+      setDetailsLoading(true);
+      try {
+        const fresh = await appointmentsService.getById(appt.id);
+        if (fresh) {
+          setSelectedDetailAppt(fresh);
+        }
+      } catch (err) {
+        console.error('Failed to fetch detailed appointment:', err);
+      } finally {
+        setDetailsLoading(false);
+      }
+    }
+  };
 
   const loadSlots = async (dateStr, serviceId, staffId) => {
     if (!dateStr) return;
@@ -513,13 +572,12 @@ export default function Appointments() {
         /* Agenda Timeline Flow */
         <div className="space-y-4">
           {appointments.map((appt, idx) => {
-            const timeObj = new Date(appt.appointment_time);
-            const timeStr = timeObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const dateStr = timeObj.toLocaleDateString(undefined, {
-              weekday: 'short',
-              month: 'short',
-              day: 'numeric',
-            });
+            const timeStr = formatAppointmentTime(appt.appointment_time);
+            const dateStr = formatAppointmentDate(appt.appointment_time);
+            const customerName = appt.customer_name || appt.customer?.name || 'Not available';
+            const customerPhone = appt.customer_phone || appt.customer?.phone || 'Not available';
+            const serviceName = appt.service_name || appt.service?.name || 'Not available';
+            const bookingSource = appt.source === 'ai_call' ? 'AI Voice Receptionist' : (appt.source || 'Dashboard');
 
             return (
               <motion.div
@@ -541,27 +599,25 @@ export default function Appointments() {
                   </div>
 
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-base font-bold text-ivory group-hover:text-burnt transition-colors">
-                        {appt.customer_name || 'Walk-in Customer'}
+                        {customerName}
                       </h3>
                       <Badge status={appt.status} />
-                      {appt.source === 'ai_call' && (
-                        <span className="px-2 py-0.5 rounded-md text-[9px] font-mono bg-burnt/15 border border-burnt/30 text-burnt font-bold">
-                          AI Booked
-                        </span>
-                      )}
+                      <span className="px-2 py-0.5 rounded-md text-[9px] font-mono bg-burnt/15 border border-burnt/30 text-burnt font-bold">
+                        {bookingSource}
+                      </span>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3 text-xs text-mutedgrey">
                       <span className="flex items-center gap-1 font-mono">
                         <Phone className="w-3 h-3 text-mutedgrey" />
-                        {appt.customer_phone || '+1 (555) 000-0000'}
+                        {customerPhone}
                       </span>
-                      {appt.service_name && (
+                      {serviceName && (
                         <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-graphite text-ivory text-[11px]">
                           <Tag className="w-3 h-3 text-amber" />
-                          {appt.service_name}
+                          {serviceName}
                         </span>
                       )}
                     </div>
@@ -575,7 +631,16 @@ export default function Appointments() {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex items-center gap-2 self-end md:self-auto">
+                <div className="flex items-center gap-2 self-end md:self-auto flex-wrap">
+                  <button
+                    onClick={() => handleOpenDetails(appt)}
+                    className="px-3 py-1.5 rounded-xl bg-warmblack hover:bg-graphite border border-white/10 text-ivory hover:text-burnt text-xs font-semibold flex items-center gap-1.5 transition-all"
+                    title="View Full Appointment & Telephony Details"
+                  >
+                    <Info className="w-3.5 h-3.5 text-burnt" />
+                    <span>View Details</span>
+                  </button>
+
                   {appt.status !== 'completed' && appt.status !== 'cancelled' && (
                     <>
                       <button
@@ -614,13 +679,12 @@ export default function Appointments() {
         /* Card Grid View */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {appointments.map((appt, idx) => {
-            const timeObj = new Date(appt.appointment_time);
-            const timeStr = timeObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const dateStr = timeObj.toLocaleDateString(undefined, {
-              weekday: 'short',
-              month: 'short',
-              day: 'numeric',
-            });
+            const timeStr = formatAppointmentTime(appt.appointment_time);
+            const dateStr = formatAppointmentDate(appt.appointment_time);
+            const customerName = appt.customer_name || appt.customer?.name || 'Not available';
+            const customerPhone = appt.customer_phone || appt.customer?.phone || 'Not available';
+            const serviceName = appt.service_name || appt.service?.name || 'Not available';
+            const bookingSource = appt.source === 'ai_call' ? 'AI Voice Receptionist' : (appt.source || 'Dashboard');
 
             return (
               <div
@@ -636,21 +700,22 @@ export default function Appointments() {
                   </div>
 
                   <h3 className="text-base font-bold text-ivory group-hover:text-burnt transition-colors">
-                    {appt.customer_name || 'Walk-in Customer'}
+                    {customerName}
                   </h3>
 
-                  <p className="text-xs font-mono text-mutedgrey mt-1">{appt.customer_phone}</p>
+                  <p className="text-xs font-mono text-mutedgrey mt-1 flex items-center gap-1.5">
+                    <Phone className="w-3 h-3 text-mutedgrey/70" />
+                    {customerPhone}
+                  </p>
 
-                  <div className="mt-3 py-2 px-3 rounded-xl bg-warmblack/60 border border-white/5 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-ivory flex items-center gap-1.5">
-                      <Tag className="w-3.5 h-3.5 text-amber" />
-                      {appt.service_name || 'General Appointment'}
+                  <div className="mt-3 py-2 px-3 rounded-xl bg-warmblack/60 border border-white/5 flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-ivory flex items-center gap-1.5 truncate">
+                      <Tag className="w-3.5 h-3.5 text-amber shrink-0" />
+                      <span className="truncate">{serviceName}</span>
                     </span>
-                    {appt.source === 'ai_call' && (
-                      <span className="text-[9px] font-mono font-bold text-burnt bg-burnt/10 px-1.5 py-0.5 rounded">
-                        AI Agent
-                      </span>
-                    )}
+                    <span className="text-[9px] font-mono font-bold text-burnt bg-burnt/10 px-2 py-0.5 rounded border border-burnt/20 shrink-0">
+                      {bookingSource}
+                    </span>
                   </div>
 
                   {appt.notes && (
@@ -661,16 +726,27 @@ export default function Appointments() {
                 </div>
 
                 <div className="mt-5 pt-3 border-t border-white/5 flex items-center justify-between gap-2">
-                  {appt.status !== 'completed' && appt.status !== 'cancelled' ? (
-                    <>
-                      <button
-                        onClick={() => handleOpenRescheduleModal(appt)}
-                        className="text-xs text-amber hover:text-amber/80 font-semibold flex items-center gap-1"
-                      >
-                        <RotateCcw className="w-3 h-3" /> Reschedule
-                      </button>
+                  <button
+                    onClick={() => handleOpenDetails(appt)}
+                    className="px-2.5 py-1.5 rounded-xl bg-warmblack hover:bg-graphite border border-white/10 text-ivory hover:text-burnt text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                    title="View Appointment & Call Details"
+                  >
+                    <Info className="w-3.5 h-3.5 text-burnt" />
+                    <span>View Details</span>
+                  </button>
 
-                      <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
+                    {appt.status !== 'completed' && appt.status !== 'cancelled' ? (
+                      <>
+                        <button
+                          onClick={() => handleOpenRescheduleModal(appt)}
+                          className="px-2 py-1.5 rounded-lg text-xs text-amber hover:text-amber/80 hover:bg-amber/10 font-semibold flex items-center gap-1 transition-colors"
+                          title="Reschedule"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span className="hidden sm:inline">Reschedule</span>
+                        </button>
+
                         <button
                           onClick={() => handleComplete(appt.id)}
                           className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors"
@@ -685,13 +761,13 @@ export default function Appointments() {
                         >
                           <XCircle className="w-3.5 h-3.5" />
                         </button>
-                      </div>
-                    </>
-                  ) : (
-                    <span className="text-[11px] text-mutedgrey font-mono capitalize">
-                      Status: {appt.status}
-                    </span>
-                  )}
+                      </>
+                    ) : (
+                      <span className="text-[11px] text-mutedgrey font-mono capitalize">
+                        {appt.status}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -1017,6 +1093,227 @@ export default function Appointments() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* View Appointment & Telephony Call Details Modal */}
+      <Modal
+        isOpen={detailsModal}
+        onClose={() => setDetailsModal(false)}
+        title="Appointment & Telephony Details"
+        maxWidth="max-w-2xl"
+      >
+        {selectedDetailAppt && (
+          <div className="space-y-5 max-h-[75vh] overflow-y-auto pr-1">
+            {/* Header Identity Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-warmblack/70 border border-white/5 gap-3">
+              <div>
+                <span className="text-[10px] font-mono text-burnt font-bold uppercase tracking-wider block">
+                  {formatAppointmentDate(selectedDetailAppt.appointment_time)} • {formatAppointmentTime(selectedDetailAppt.appointment_time)} (IST)
+                </span>
+                <h2 className="text-lg font-bold text-ivory mt-0.5">
+                  {selectedDetailAppt.customer_name || selectedDetailAppt.customer?.name || 'Not available'}
+                </h2>
+                <p className="text-xs text-mutedgrey font-mono mt-0.5 flex items-center gap-1.5">
+                  <Phone className="w-3 h-3 text-mutedgrey/70" />
+                  {selectedDetailAppt.customer_phone || selectedDetailAppt.customer?.phone || 'Not available'}
+                </p>
+              </div>
+              <div className="sm:text-right flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2">
+                <Badge status={selectedDetailAppt.status} />
+                <span className="text-[10px] font-mono font-bold text-burnt bg-burnt/10 border border-burnt/20 px-2 py-0.5 rounded">
+                  {selectedDetailAppt.source === 'ai_call' ? 'AI Voice Receptionist' : (selectedDetailAppt.source || 'Dashboard')}
+                </span>
+              </div>
+            </div>
+
+            {/* Section 1: Appointment Information */}
+            <div className="p-4 rounded-2xl bg-charcoal/60 border border-white/5 space-y-3">
+              <h4 className="text-xs font-bold text-burnt uppercase tracking-wider flex items-center gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5" />
+                Appointment Information
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Appointment ID</span>
+                  <span className="font-mono text-ivory select-all text-[11px] break-all">{selectedDetailAppt.id || 'Not available'}</span>
+                </div>
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Status</span>
+                  <span className="capitalize text-ivory font-semibold">{selectedDetailAppt.status || 'Not available'}</span>
+                </div>
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Scheduled Date</span>
+                  <span className="text-ivory font-medium">{formatAppointmentDate(selectedDetailAppt.appointment_time) || 'Not available'}</span>
+                </div>
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Scheduled Time (Asia/Kolkata)</span>
+                  <span className="text-ivory font-mono font-bold text-amber">
+                    {formatAppointmentTime(selectedDetailAppt.appointment_time) ? `${formatAppointmentTime(selectedDetailAppt.appointment_time)} IST` : 'Not available'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Appointment Duration</span>
+                  <span className="text-ivory">
+                    {selectedDetailAppt.service?.duration_minutes ? `${selectedDetailAppt.service.duration_minutes} minutes` : 'Not available'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Booking Source</span>
+                  <span className="text-ivory">
+                    {selectedDetailAppt.source === 'ai_call' ? 'AI Voice Receptionist (Plivo)' : (selectedDetailAppt.source || 'Not available')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Customer Information */}
+            <div className="p-4 rounded-2xl bg-charcoal/60 border border-white/5 space-y-3">
+              <h4 className="text-xs font-bold text-burnt uppercase tracking-wider flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5" />
+                Customer Information
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Customer Name</span>
+                  <span className="text-ivory font-semibold">
+                    {selectedDetailAppt.customer_name || selectedDetailAppt.customer?.name || 'Not available'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Phone Number</span>
+                  <span className="font-mono text-ivory">
+                    {selectedDetailAppt.customer_phone || selectedDetailAppt.customer?.phone || 'Not available'}
+                  </span>
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="text-mutedgrey block text-[11px]">Email Address</span>
+                  <span className="text-ivory">
+                    {selectedDetailAppt.customer?.email || 'Not available'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 3: Service Information */}
+            <div className="p-4 rounded-2xl bg-charcoal/60 border border-white/5 space-y-3">
+              <h4 className="text-xs font-bold text-burnt uppercase tracking-wider flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5" />
+                Service Information
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Service Name</span>
+                  <span className="text-ivory font-semibold text-amber">
+                    {selectedDetailAppt.service_name || selectedDetailAppt.service?.name || 'Not available'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Consultation Fee</span>
+                  <span className="text-ivory font-mono font-bold">
+                    {selectedDetailAppt.service?.price != null ? `₹${selectedDetailAppt.service.price}` : 'Not available'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Service Duration</span>
+                  <span className="text-ivory">
+                    {selectedDetailAppt.service?.duration_minutes ? `${selectedDetailAppt.service.duration_minutes} minutes` : 'Not available'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Service ID</span>
+                  <span className="font-mono text-ivory text-[11px]">
+                    {selectedDetailAppt.service_id || selectedDetailAppt.service?.id || 'Not available'}
+                  </span>
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="text-mutedgrey block text-[11px]">Service Description</span>
+                  <span className="text-mutedgrey/90 italic">
+                    {selectedDetailAppt.service?.description || 'Not available'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 4: Telephony Call Information */}
+            <div className="p-4 rounded-2xl bg-charcoal/60 border border-white/5 space-y-3">
+              <h4 className="text-xs font-bold text-burnt uppercase tracking-wider flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5" />
+                Call Information
+              </h4>
+              <div className="space-y-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-mutedgrey block text-[11px]">Call UUID</span>
+                    <span className="font-mono text-ivory select-all text-[11px] break-all">
+                      {selectedDetailAppt.call?.id || (selectedDetailAppt.notes && selectedDetailAppt.notes.match(/CallSid:\s*([a-f0-9\-]+)/)?.[1]) || 'Not available'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-mutedgrey block text-[11px]">Call Duration</span>
+                    <span className="text-ivory font-mono">
+                      {selectedDetailAppt.call?.duration_seconds ? `${selectedDetailAppt.call.duration_seconds} seconds` : 'Not available'}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">AI Booking Notes</span>
+                  <p className="p-2.5 rounded-xl bg-warmblack/70 border border-white/5 text-ivory font-mono text-[11px] mt-1 break-words">
+                    {selectedDetailAppt.notes || 'Not available'}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-mutedgrey block text-[11px]">Conversation Summary</span>
+                  <p className="p-2.5 rounded-xl bg-warmblack/70 border border-white/5 text-ivory/90 text-[11px] mt-1 leading-relaxed">
+                    {selectedDetailAppt.call?.summary || 'Not available'}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-mutedgrey block text-[11px] mb-1">Conversation Transcript</span>
+                  {selectedDetailAppt.call?.transcript ? (
+                    <div className="p-3 rounded-xl bg-warmblack/90 border border-white/5 max-h-52 overflow-y-auto space-y-1.5 font-mono text-[11px] leading-relaxed">
+                      {selectedDetailAppt.call.transcript.split('\n').map((line, lIdx) => {
+                        const isCaller = line.startsWith('CALLER:');
+                        const isAssistant = line.startsWith('ASSISTANT:');
+                        return (
+                          <div
+                            key={lIdx}
+                            className={`p-1.5 rounded-lg ${
+                              isCaller
+                                ? 'bg-burnt/10 text-burnt border border-burnt/20'
+                                : isAssistant
+                                ? 'bg-amber/10 text-amber border border-amber/20'
+                                : 'text-mutedgrey'
+                            }`}
+                          >
+                            {line}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="p-2.5 rounded-xl bg-warmblack/70 border border-white/5 text-mutedgrey italic text-[11px]">
+                      Not available
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Close Button */}
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setDetailsModal(false)}
+                className="px-5 py-2 rounded-xl bg-warmblack hover:bg-graphite border border-graphite text-xs font-semibold text-ivory transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

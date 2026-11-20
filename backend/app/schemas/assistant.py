@@ -13,10 +13,10 @@ class AssistantConfigBase(BaseModel):
     system_prompt: str | None = None
     business_info: str | None = None
     working_hours: str | None = None
-    ai_provider: str = Field(default="mock")
-    ai_model: str = Field(default="gpt-4o-mini")
-    stt_provider: str = Field(default="deepgram")
-    tts_provider: str = Field(default="openai")
+    ai_provider: str = Field(default="gemini")
+    ai_model: str = Field(default="gemini-3.1-flash-lite")
+    stt_provider: str = Field(default="sarvam")
+    tts_provider: str = Field(default="sarvam")
     fallback_number: str | None = None
     enable_tanglish: bool = Field(default=True)
     is_active: bool = True

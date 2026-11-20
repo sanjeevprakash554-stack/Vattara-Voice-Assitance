@@ -11,54 +11,46 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     async function loadUser() {
-      // 1. If we have a stored token, try loading the real user profile
+      // If we have a stored token, authenticate with real backend profile
       if (token && token !== 'demo_token' && !token.startsWith('mock_jwt_token')) {
         try {
           const profile = await authService.getProfile();
           setUser(profile.user);
           setBusiness(profile.business);
-          setLoading(false);
-          return;
         } catch (err) {
-          console.warn('Stored token expired or invalid, attempting automatic demo re-authentication:', err);
-        }
-      }
-
-      // 2. Automatically obtain a genuine JWT token from live backend with demo credentials
-      try {
-        const loginData = await authService.login({
-          email: 'admin@vattara.com',
-          password: 'Admin@123',
-        });
-        if (loginData?.access_token) {
-          localStorage.setItem('vattara_token', loginData.access_token);
-          setToken(loginData.access_token);
-          setUser(loginData.user);
-          setBusiness(loginData.business);
+          console.warn('Stored token expired or invalid:', err);
+          localStorage.removeItem('vattara_token');
+          setToken(null);
+          setUser(null);
+          setBusiness(null);
+        } finally {
           setLoading(false);
-          return;
         }
-      } catch (loginErr) {
-        console.warn('Backend auto-login failed, falling back to mock client state:', loginErr);
+        return;
       }
 
-      // 3. Fallback mock user if backend is unreachable
-      const fallbackUser = {
-        id: 'demo-user-1',
-        email: 'admin@vattara.com',
-        full_name: 'Dr. Rajesh Kumar',
-        role: 'admin',
-      };
-      const fallbackBiz = {
-        id: 'demo-biz-1',
-        name: 'Vattara City Clinic & Diagnostics',
-        vertical: 'clinic',
-        phone: '+91 44 2828 9000',
-      };
-      setUser(fallbackUser);
-      setBusiness(fallbackBiz);
+      // Check if explicit demo auto-login is enabled for dev sandbox
+      const isAutoLoginEnabled = import.meta.env.VITE_ENABLE_AUTO_LOGIN === 'true';
+      if (isAutoLoginEnabled) {
+        try {
+          const loginData = await authService.login({
+            email: 'admin@vattara.com',
+            password: 'Admin@123',
+          });
+          if (loginData?.access_token) {
+            localStorage.setItem('vattara_token', loginData.access_token);
+            setToken(loginData.access_token);
+            setUser(loginData.user);
+            setBusiness(loginData.business);
+          }
+        } catch (loginErr) {
+          console.warn('Development auto-login unavailable:', loginErr);
+        }
+      }
+
       setLoading(false);
     }
+
     loadUser();
   }, []);
 
@@ -101,11 +93,11 @@ export function AuthProvider({ children }) {
         business,
         token,
         loading,
-        isAuthenticated: !!user,
         login,
         register,
         logout,
         updateProfile,
+        isAuthenticated: !!token && !!user,
       }}
     >
       {children}
@@ -120,4 +112,3 @@ export function useAuth() {
   }
   return context;
 }
-

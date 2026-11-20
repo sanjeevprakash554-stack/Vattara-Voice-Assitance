@@ -10,9 +10,8 @@ from app.services.telephony.base import (
     OutboundCallResponse,
 )
 from app.services.telephony.factory import get_telephony_provider
+from app.services.telephony.plivo_adapter import PlivoAdapter
 from app.services.telephony.security import mask_phone, mask_secret, verify_webhook_token
-from app.services.telephony.smartflo_adapter import SmartfloAdapter
-from app.services.telephony.twilio_adapter import TwilioAdapter
 
 __all__ = [
     "BaseTelephonyProvider",
@@ -26,6 +25,5 @@ __all__ = [
     "mask_phone",
     "mask_secret",
     "verify_webhook_token",
-    "SmartfloAdapter",
-    "TwilioAdapter",
+    "PlivoAdapter",
 ]

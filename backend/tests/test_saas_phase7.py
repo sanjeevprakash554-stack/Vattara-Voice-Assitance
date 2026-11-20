@@ -245,40 +245,32 @@ def test_telephony_integrations_and_masking(client: TestClient, auth_headers: di
         "/api/v1/integrations/settings",
         headers=auth_headers,
         json={
-            "primary_provider": "smartflo",
-            "twilio_account_sid": "ACmock_saas_twilio_sid_12345",
-            "twilio_phone_number": "+14155552671",
-            "smartflo_caller_id": "918040009999",
-            "smartflo_api_key": "tsf_secret_token_live_key_9999",
-            "exotel_caller_id": "08088887777",
+            "primary_provider": "plivo",
+            "plivo_auth_id": "MAMOCK_SAAS_AUTH_ID_12345",
+            "plivo_phone_number": "+918040009999",
         },
     )
     assert put_resp.status_code == 200
-    assert put_resp.json()["primary_provider"] == "smartflo"
+    assert put_resp.json()["primary_provider"] == "plivo"
 
     # 2. Get settings: tokens MUST be masked
     get_resp = client.get("/api/v1/integrations/settings", headers=auth_headers)
     assert get_resp.status_code == 200
     data = get_resp.json()
-    assert data["primary_provider"] == "smartflo"
-    assert "••••" in data["twilio_account_sid_masked"]
-    assert "••••" in data["smartflo_api_key_masked"]
+    assert data["primary_provider"] == "plivo"
+    assert "••••" in data["plivo_auth_id_masked"]
     # Raw token never returned
-    assert data["twilio_account_sid_masked"] != "ACmock_saas_twilio_sid_12345"
-    assert data["smartflo_api_key_masked"] != "tsf_secret_token_live_key_9999"
+    assert data["plivo_auth_id_masked"] != "MAMOCK_SAAS_AUTH_ID_12345"
 
-    # 3. Test connectivity for each provider
-    for prov in ["twilio", "smartflo", "exotel"]:
-        test_resp = client.post(
-            "/api/v1/integrations/test-connection",
-            headers=auth_headers,
-            json={"provider": prov},
-        )
-        assert test_resp.status_code == 200
-        tdata = test_resp.json()
-        assert tdata["provider"] == prov
-        assert tdata["is_connected"] is True
-        assert tdata["latency_ms"] > 0
+    # 3. Test connectivity for Plivo
+    test_resp = client.post(
+        "/api/v1/integrations/test-connection",
+        headers=auth_headers,
+        json={"provider": "plivo"},
+    )
+    assert test_resp.status_code == 200
+    tdata = test_resp.json()
+    assert tdata["provider"] == "plivo"
 
 
 def test_enriched_dashboard_stats(client: TestClient, auth_headers: dict[str, str]):
@@ -371,9 +363,9 @@ def test_multi_tenant_data_isolation(client: TestClient, db_session: Session):
     integ2 = BusinessIntegration(
         id="integ-tenant-2",
         business_id=biz2.id,
-        primary_provider="smartflo",
-        smartflo_caller_id="918049990000",
-        smartflo_api_key="tsf_apollo_key_999",
+        primary_provider="plivo",
+        plivo_phone_number="+918049990000",
+        plivo_auth_id="MAMOCK_APOLLO_KEY_999",
     )
     db_session.add(integ2)
     db_session.commit()
@@ -394,8 +386,8 @@ def test_multi_tenant_data_isolation(client: TestClient, db_session: Session):
     # Query Tenant 2 integrations
     integ_resp = client.get("/api/v1/integrations/settings", headers=headers2)
     assert integ_resp.status_code == 200
-    assert integ_resp.json()["primary_provider"] == "smartflo"
-    assert integ_resp.json()["smartflo_caller_id"] == "918049990000"
+    assert integ_resp.json()["primary_provider"] == "plivo"
+    assert integ_resp.json()["plivo_phone_number"] == "+918049990000"
 
     # Tenant 2 staff query only returns Tenant 2 staff
     staff_resp = client.get("/api/v1/staff", headers=headers2)

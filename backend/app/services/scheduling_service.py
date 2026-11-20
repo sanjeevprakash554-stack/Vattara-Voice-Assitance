@@ -27,6 +27,7 @@ from app.schemas.appointment import (
     BusinessHoursResponse,
     TimeSlot,
 )
+from app.services.telephony.phone_utils import normalize_indian_mobile_number
 
 logger = get_logger(__name__)
 
@@ -454,10 +455,10 @@ def validate_booking_feasibility(
     appointment_time_utc = appointment_time.astimezone(timezone.utc)
     local_appt = appointment_time.astimezone(biz_tz)
 
-    # 2. Validate not in the past
+    # 2. Priority 2: Strictly validate appointment is not in the past
     if enforce_past_check:
         now_utc = datetime.now(timezone.utc)
-        if appointment_time_utc < now_utc - timedelta(minutes=5):
+        if appointment_time_utc < now_utc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot book appointments in the past.",
@@ -616,10 +617,24 @@ def validate_booking_feasibility(
                 Appointment.appointment_time == appointment_time_utc,
             )
         )
+        norm_p = normalize_indian_mobile_number(customer_phone) if customer_phone else None
+        raw_p = customer_phone.strip() if customer_phone else None
+        phone_variants = set()
+        if norm_p:
+            phone_variants.add(norm_p)
+            phone_variants.add(norm_p.replace("+91", "91"))
+            phone_variants.add(norm_p.replace("+91", ""))
+        if raw_p:
+            phone_variants.add(raw_p)
+
+        match_conds = []
         if customer_id and customer_id != "new":
-            dup_stmt = dup_stmt.where(Appointment.customer_id == customer_id)
-        elif customer_phone:
-            dup_stmt = dup_stmt.where(Customer.phone == customer_phone.strip())
+            match_conds.append(Appointment.customer_id == customer_id)
+        if phone_variants:
+            match_conds.append(Customer.phone.in_(list(phone_variants)))
+
+        if match_conds:
+            dup_stmt = dup_stmt.where(or_(*match_conds))
 
         if exclude_appointment_id:
             dup_stmt = dup_stmt.where(Appointment.id != exclude_appointment_id)

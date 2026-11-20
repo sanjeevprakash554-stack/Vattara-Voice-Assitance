@@ -95,21 +95,12 @@ def get_reports_summary(
     integration = db.scalar(
         select(BusinessIntegration).where(BusinessIntegration.business_id == biz_id)
     )
-    active_provider = getattr(integration, "primary_provider", "twilio") if integration else "twilio"
+    active_provider = getattr(integration, "primary_provider", "plivo") if integration else "plivo"
 
     # Distribution based on call notes/summary/active integration
-    provider_counts = {"twilio": 0, "smartflo": 0, "exotel": 0}
+    provider_counts = {"plivo": 0}
     for c in calls_in_range:
-        summary_lower = (c.summary or "").lower()
-        if "smartflo" in summary_lower:
-            provider_counts["smartflo"] += 1
-        elif "exotel" in summary_lower:
-            provider_counts["exotel"] += 1
-        elif "twilio" in summary_lower:
-            provider_counts["twilio"] += 1
-        else:
-            # Attribute to active provider
-            provider_counts[active_provider] = provider_counts.get(active_provider, 0) + 1
+        provider_counts["plivo"] = provider_counts.get("plivo", 0) + 1
 
     # Reminder delivery metrics in range
     reminders_in_range = db.scalars(

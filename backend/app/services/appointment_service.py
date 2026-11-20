@@ -11,6 +11,7 @@ from app.models.assistant import Service
 from app.models.customer import Customer
 from app.schemas.appointment import AppointmentCreate
 from app.services.scheduling_service import validate_booking_feasibility
+from app.services.telephony.phone_utils import clean_phone_digits, normalize_indian_mobile_number
 
 logger = get_logger(__name__)
 
@@ -21,7 +22,7 @@ def book_appointment_core(
     payload: AppointmentCreate,
     validate_conflicts: bool = True,
     enforce_operating_hours: bool = False,
-    enforce_past_check: bool = False,
+    enforce_past_check: bool = True,
 ) -> Appointment:
     """Core appointment booking logic shared by user API and telephony integrations.
 
@@ -32,15 +33,28 @@ def book_appointment_core(
     """
     customer_id = payload.customer_id
 
-    # 1. Resolve or auto-create Customer
+    # 1. Resolve or auto-create Customer with canonical +91 phone normalization
     if payload.customer_phone and (not customer_id or customer_id == "new"):
-        clean_phone = payload.customer_phone.strip()
+        clean_phone = normalize_indian_mobile_number(payload.customer_phone) or payload.customer_phone.strip()
+        payload.customer_phone = clean_phone
+        from_digits = clean_phone_digits(clean_phone)
+
+        # Exact match
         customer = db.scalar(
             select(Customer).where(
                 Customer.business_id == business_id,
                 Customer.phone == clean_phone,
             )
         )
+        # Relaxed match within tenant if not exact
+        if not customer and from_digits:
+            for c in db.scalars(select(Customer).where(Customer.business_id == business_id)).all():
+                if c.phone and clean_phone_digits(c.phone) == from_digits:
+                    customer = c
+                    if clean_phone.startswith("+91") and not c.phone.startswith("+91"):
+                        c.phone = clean_phone
+                    break
+
         if not customer:
             customer = Customer(
                 business_id=business_id,
@@ -53,8 +67,9 @@ def book_appointment_core(
             logger.info("Auto-created new customer '%s' (%s) for business %s", customer.name, customer.phone, business_id)
         else:
             customer.total_appointments = (customer.total_appointments or 0) + 1
-            if payload.customer_name and (customer.name == "New Client" or customer.name.startswith("Caller ")):
-                customer.name = payload.customer_name
+            clean_name = payload.customer_name.strip() if payload.customer_name else None
+            if clean_name and clean_name not in ("New Client", "Walk-in Customer") and not clean_name.startswith("Caller "):
+                customer.name = clean_name
             db.flush()
             logger.info("Reused customer '%s' (%s), total_appointments: %d", customer.name, customer.phone, customer.total_appointments)
         customer_id = customer.id

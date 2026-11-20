@@ -12,6 +12,8 @@ class LLMMessage(BaseModel):
     content: str
     tool_call_id: str | None = None
     name: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+    raw_parts: list[dict[str, Any]] | None = None
 
 
 class ExtractedEntities(BaseModel):
@@ -75,6 +77,25 @@ class BaseLLMProvider(ABC):
     ) -> LLMResponse:
         """Generate conversational response and extract entities/tool calls synchronously."""
         pass
+
+    async def agenerate_response(
+        self,
+        messages: list[LLMMessage],
+        system_prompt: str,
+        active_services: list[dict[str, Any]],
+        available_tools: list[dict[str, Any]],
+        temperature: float = 0.2,
+        max_tokens: int = 512,
+    ) -> LLMResponse:
+        """Asynchronously generate conversational response."""
+        return self.generate_response(
+            messages=messages,
+            system_prompt=system_prompt,
+            active_services=active_services,
+            available_tools=available_tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
 
 class BaseSTTProvider(ABC):

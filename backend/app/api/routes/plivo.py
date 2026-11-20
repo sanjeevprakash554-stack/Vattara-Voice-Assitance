@@ -7,6 +7,7 @@ Endpoints:
 - GET       /api/v1/plivo/status: Telephony configuration and connectivity status probe.
 """
 
+import asyncio
 from datetime import datetime, timezone
 import json
 from typing import Any
@@ -39,6 +40,7 @@ from app.models.conversation_session import ConversationSession
 from app.services.plivo_service import PlivoService, get_plivo_service
 from app.services.streaming.session_manager import stream_manager
 from app.services.streaming.stream_orchestrator import StreamOrchestrator
+from app.services.telephony.phone_utils import normalize_indian_mobile_number
 from app.services.voice_assistant_service import get_or_create_conversation_session
 
 logger = get_logger(__name__)
@@ -168,8 +170,11 @@ async def handle_plivo_incoming_call(
         unknown_xml = plivo_service.build_unknown_number_xml()
         return Response(content=unknown_xml, media_type="application/xml", status_code=status.HTTP_200_OK)
 
+    # Normalize caller number to E.164 (+91 followed by 10 digits)
+    norm_caller_from = normalize_indian_mobile_number(caller_from) or caller_from.strip()
+
     # 5. Resolve or create customer within the tenant
-    customer = resolve_or_create_customer(db, business.id, caller_from)
+    customer = resolve_or_create_customer(db, business.id, norm_caller_from)
 
     # 6. Idempotently log or update Call record
     mapped_status = "in_progress" if call_status in ("ringing", "in-progress", "queued", "initiated") else call_status
@@ -188,7 +193,7 @@ async def handle_plivo_incoming_call(
             business_id=business.id,
             customer_id=customer.id,
             caller_name=customer.name,
-            caller_phone=caller_from.strip(),
+            caller_phone=norm_caller_from,
             call_type="incoming",
             status=mapped_status,
             duration_seconds=0,
@@ -211,7 +216,7 @@ async def handle_plivo_incoming_call(
         db=db,
         call_sid=call_uuid,
         business_id=business.id,
-        caller_phone=caller_from.strip(),
+        caller_phone=norm_caller_from,
     )
 
     # 8. Construct WebSocket URL with tenant parameters encoded in query string
@@ -224,7 +229,7 @@ async def handle_plivo_incoming_call(
 
     ws_url_with_params = (
         f"{ws_url}?business_id={business.id}&call_uuid={call_uuid}"
-        f"&caller_phone={caller_from}&to={destination_to}"
+        f"&caller_phone={norm_caller_from}&to={destination_to}"
     )
 
     # 9. Return Plivo XML with bidirectional <Stream>
@@ -283,8 +288,36 @@ async def handle_plivo_voice_stream(
 
     orchestrator = StreamOrchestrator()
     current_stream_id: str | None = None
+    keepalive_task: asyncio.Task | None = None
+
+    async def _run_ws_keepalive() -> None:
+        """Send periodic application-level keepalive pings to prevent proxy/carrier timeouts."""
+        try:
+            interval = getattr(settings, "WS_HEARTBEAT_INTERVAL_SEC", 15.0)
+            while True:
+                await asyncio.sleep(interval)
+                if not current_stream_id:
+                    continue
+                session = stream_manager.get_session(current_stream_id)
+                if not session:
+                    break
+                try:
+                    await websocket.send_text(
+                        json.dumps({
+                            "event": "ping",
+                            "streamId": current_stream_id,
+                            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                        })
+                    )
+                except Exception as ping_err:
+                    logger.debug("Plivo WS keepalive ping error for %s: %s", current_stream_id, ping_err)
+                    break
+        except asyncio.CancelledError:
+            pass
 
     try:
+        keepalive_task = asyncio.create_task(_run_ws_keepalive())
+
         while True:
             raw_msg = await websocket.receive_text()
             if not raw_msg:
@@ -339,6 +372,32 @@ async def handle_plivo_voice_stream(
                         db=db,
                     )
 
+            elif event_type == "ping":
+                stream_id = data.get("streamId") or current_stream_id
+                try:
+                    await websocket.send_text(
+                        json.dumps({
+                            "event": "pong",
+                            "streamId": stream_id,
+                            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                        })
+                    )
+                except Exception as e:
+                    logger.debug("Failed to send pong to Plivo for stream %s: %s", stream_id, e)
+
+            elif event_type == "pong":
+                logger.debug("Received pong from Plivo for stream %s", current_stream_id)
+
+            elif event_type == "playedStream":
+                logger.debug("Plivo playedStream event received for stream %s", current_stream_id)
+
+            elif event_type == "clearedAudio":
+                logger.debug("Plivo clearedAudio event received for stream %s", current_stream_id)
+
+            elif event_type == "dtmf":
+                digits = data.get("dtmf", {}).get("digit") or data.get("digit")
+                logger.info("Plivo DTMF received on stream %s: %s", current_stream_id, digits)
+
             elif event_type == "stop":
                 stream_id = data.get("streamId") or current_stream_id
                 stop_data = data.get("stop", {})
@@ -362,12 +421,19 @@ async def handle_plivo_voice_stream(
             exc_info=True,
         )
     finally:
+        if keepalive_task and not keepalive_task.done():
+            keepalive_task.cancel()
         logger.info(
             "Plivo Telephony WebSocket connection cleaned up for call_uuid=%s, stream=%s",
             query_call_uuid,
             current_stream_id,
         )
         if current_stream_id:
+            active_sess = stream_manager.get_session(current_stream_id)
+            if active_sess:
+                active_sess.playback_cancellation_reason = "websocket_closed"
+                if active_sess.current_playback_task and not active_sess.current_playback_task.done():
+                    active_sess.current_playback_task.cancel()
             await stream_manager.unregister(current_stream_id)
 
 

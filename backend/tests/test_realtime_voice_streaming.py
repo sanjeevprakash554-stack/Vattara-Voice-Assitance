@@ -20,6 +20,7 @@ import json
 import math
 import struct
 import time
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 import anyio
 import pytest
@@ -28,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.services.plivo_service import PlivoService
 from app.models.business import Business
 from app.models.call import Call
 from app.models.conversation_session import ConversationSession
@@ -240,27 +242,43 @@ def test_openai_streaming_tts_downsampling():
 
 
 # ==============================================================================
-# 4. TwiML Media Stream Webhook
+# 4. Plivo Media Stream Webhook
 # ==============================================================================
 
 
-def test_twilio_media_stream_twiml_generation(client: TestClient):
-    """Verify POST /api/v1/voice/stream-twiml generates valid <Connect><Stream> TwiML."""
+def test_plivo_media_stream_xml_generation(client: TestClient, db_session: Session):
+    """Verify POST /api/v1/plivo/incoming generates valid <Stream> XML."""
+    payload = {
+        "CallUUID": "val_stream_test_001",
+        "From": "+919876543210",
+        "To": settings.PLIVO_PHONE_NUMBER or "+918040001234",
+        "Direction": "inbound",
+    }
+    endpoint = "/api/v1/plivo/incoming"
+    url = f"http://testserver{endpoint}"
+    nonce = "777888999111"
+    sig = PlivoService.compute_v3_signature(
+        auth_token=settings.PLIVO_AUTH_TOKEN or "test_token",
+        uri=url,
+        nonce=nonce,
+        method="POST",
+        params=payload,
+    )
+
     resp = client.post(
-        "/api/v1/voice/stream-twiml",
-        data={
-            "CallSid": "CA_test_stream_001",
-            "From": "+919876543210",
-            "To": "+12292523194",
+        endpoint,
+        data=payload,
+        headers={
+            "X-Plivo-Signature-V3": sig,
+            "X-Plivo-Signature-V3-Nonce": nonce,
         },
     )
     assert resp.status_code == 200
     assert "application/xml" in resp.headers["content-type"]
     xml_content = resp.text
-    assert "<Connect>" in xml_content
+    assert "<Response>" in xml_content
     assert "<Stream" in xml_content
-    assert "/api/v1/voice/stream" in xml_content
-    assert '<Parameter name="business_id"' in xml_content
+    assert "/api/v1/plivo/stream" in xml_content
 
 
 # ==============================================================================
@@ -269,27 +287,32 @@ def test_twilio_media_stream_twiml_generation(client: TestClient):
 
 
 def test_websocket_stream_lifecycle_and_turn_taking(client: TestClient, db_session: Session):
-    """Verify complete WebSocket Media Stream lifecycle: connect, start, media, mark, stop."""
-    stream_sid = "MZ_stream_test_001"
-    call_sid = "CA_call_test_001"
+    """Verify complete WebSocket Media Stream lifecycle: connect, start, playAudio, stop."""
+    stream_sid = "plivo_stream_test_001"
+    call_sid = "val_call_test_001"
 
-    with client.websocket_connect("/api/v1/voice/stream") as ws:
-        # Step 1: Send 'connected'
-        ws.send_text(json.dumps({"event": "connected", "protocol": "Call", "version": "1.0.0"}))
+    # Pre-seed call
+    call = Call(
+        id=call_sid,
+        business_id="demo-biz-vattara-health",
+        caller_phone="+919876543210",
+        call_type="incoming",
+        status="in_progress",
+        duration_seconds=0,
+        summary=f"Incoming voice call via Plivo (CallUUID: {call_sid})",
+        initiated_at=datetime.now(timezone.utc),
+    )
+    db_session.add(call)
+    db_session.commit()
 
-        # Step 2: Send 'start'
+    with client.websocket_connect(f"/api/v1/plivo/stream?business_id=demo-biz-vattara-health&call_uuid={call_sid}&caller_phone=%2B919876543210") as ws:
+        # Step 1: Send 'start'
         ws.send_text(
             json.dumps({
                 "event": "start",
-                "streamSid": stream_sid,
                 "start": {
-                    "streamSid": stream_sid,
-                    "callSid": call_sid,
-                    "customParameters": {
-                        "business_id": "demo-biz-vattara-health",
-                        "caller_phone": "+919876543210",
-                    },
-                    "mediaFormat": {"encoding": "audio/x-mulaw", "sampleRate": 8000, "channels": 1},
+                    "streamId": stream_sid,
+                    "callId": call_sid,
                 },
             })
         )
@@ -298,19 +321,16 @@ def test_websocket_stream_lifecycle_and_turn_taking(client: TestClient, db_sessi
         received_media = False
         for _ in range(5):
             msg = json.loads(ws.receive_text())
-            if msg.get("event") == "media":
+            if msg.get("event") == "playAudio":
                 received_media = True
-                assert msg["streamSid"] == stream_sid
+                assert "media" in msg
                 assert "payload" in msg["media"]
                 break
 
-        assert received_media, "Expected assistant voice greeting media frame"
+        assert received_media, "Expected assistant voice greeting playAudio frame"
 
-        # Step 3: Send 'mark'
-        ws.send_text(json.dumps({"event": "mark", "streamSid": stream_sid, "mark": {"name": "greeting_mark"}}))
-
-        # Step 4: Send 'stop'
-        ws.send_text(json.dumps({"event": "stop", "streamSid": stream_sid, "stop": {"callSid": call_sid}}))
+        # Step 2: Send 'stop'
+        ws.send_text(json.dumps({"event": "stop", "stop": {"streamId": stream_sid, "callId": call_sid}}))
 
     # Verify session cleaned up
     assert stream_manager.get_session(stream_sid) is None
@@ -366,13 +386,13 @@ def test_caller_interruption_barge_in():
         # Verify Twilio 'clear' event was sent to flush audio buffer
         mock_ws.send_text.assert_called()
         sent_calls = [json.loads(call.args[0]) for call in mock_ws.send_text.call_args_list]
-        clear_events = [c for c in sent_calls if c.get("event") == "clear"]
+        clear_events = [c for c in sent_calls if c.get("event") in ("clear", "clearAudio")]
         assert len(clear_events) >= 1
-        assert clear_events[0]["streamSid"] == stream_sid
+        assert clear_events[0].get("streamSid") == stream_sid or clear_events[0].get("streamId") == stream_sid
 
         await stream_manager.unregister(stream_sid)
 
-    asyncio.run(_run())
+    anyio.run(_run)
 
 
 # ==============================================================================
@@ -398,51 +418,69 @@ def test_multi_tenant_stream_isolation(client: TestClient, db_session: Session):
         is_active=True,
     )
     db_session.add_all([biz1, biz2])
+
+    call1 = Call(
+        id="val_call_iso_001",
+        business_id=biz1.id,
+        caller_phone="+919876543210",
+        call_type="incoming",
+        status="in_progress",
+        duration_seconds=0,
+        summary="Incoming voice call via Plivo (CallUUID: val_call_iso_001)",
+        initiated_at=datetime.now(timezone.utc),
+    )
+    call2 = Call(
+        id="val_call_iso_002",
+        business_id=biz2.id,
+        caller_phone="+919876543211",
+        call_type="incoming",
+        status="in_progress",
+        duration_seconds=0,
+        summary="Incoming voice call via Plivo (CallUUID: val_call_iso_002)",
+        initiated_at=datetime.now(timezone.utc),
+    )
+    db_session.add_all([call1, call2])
     db_session.commit()
 
     # Stream 1 for Tenant 1
-    with client.websocket_connect("/api/v1/voice/stream") as ws1:
+    with client.websocket_connect(f"/api/v1/plivo/stream?business_id={biz1.id}&call_uuid={call1.id}&caller_phone=%2B919876543210") as ws1:
         ws1.send_text(
             json.dumps({
                 "event": "start",
-                "streamSid": "MZ_iso_001",
                 "start": {
-                    "streamSid": "MZ_iso_001",
-                    "callSid": "CA_iso_001",
-                    "customParameters": {"business_id": biz1.id},
+                    "streamId": "MZ_iso_001",
+                    "callId": call1.id,
                 },
             })
         )
         msg1 = json.loads(ws1.receive_text())
-        assert msg1.get("event") == "media"
+        assert msg1.get("event") == "playAudio"
 
         s1 = stream_manager.get_session("MZ_iso_001")
         assert s1 is not None
         assert s1.business_id == biz1.id
         tenant_1_resolved_id = s1.business_id
-        ws1.send_text(json.dumps({"event": "stop", "streamSid": "MZ_iso_001"}))
+        ws1.send_text(json.dumps({"event": "stop", "stop": {"streamId": "MZ_iso_001", "callId": call1.id}}))
 
     # Stream 2 for Tenant 2
-    with client.websocket_connect("/api/v1/voice/stream") as ws2:
+    with client.websocket_connect(f"/api/v1/plivo/stream?business_id={biz2.id}&call_uuid={call2.id}&caller_phone=%2B919876543211") as ws2:
         ws2.send_text(
             json.dumps({
                 "event": "start",
-                "streamSid": "MZ_iso_002",
                 "start": {
-                    "streamSid": "MZ_iso_002",
-                    "callSid": "CA_iso_002",
-                    "customParameters": {"business_id": biz2.id},
+                    "streamId": "MZ_iso_002",
+                    "callId": call2.id,
                 },
             })
         )
         msg2 = json.loads(ws2.receive_text())
-        assert msg2.get("event") == "media"
+        assert msg2.get("event") == "playAudio"
 
         s2 = stream_manager.get_session("MZ_iso_002")
         assert s2 is not None
         assert s2.business_id == biz2.id
         tenant_2_resolved_id = s2.business_id
-        ws2.send_text(json.dumps({"event": "stop", "streamSid": "MZ_iso_002"}))
+        ws2.send_text(json.dumps({"event": "stop", "stop": {"streamId": "MZ_iso_002", "callId": call2.id}}))
 
     assert tenant_1_resolved_id == biz1.id
     assert tenant_2_resolved_id == biz2.id
@@ -455,14 +493,12 @@ def test_multi_tenant_stream_isolation(client: TestClient, db_session: Session):
 
 
 def test_stream_engine_health_endpoint(client: TestClient):
-    """Verify /stream-health reports operational state, codecs, and providers."""
-    resp = client.get("/api/v1/voice/stream-health")
+    """Verify /health/plivo reports operational state and configured status."""
+    resp = client.get("/api/v1/health/plivo")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["streaming_engine"] == "operational"
-    assert "audio/x-mulaw" in data["audio_format"]
-    assert "barge_in_enabled" in data
-    assert "vad_energy_threshold" in data
+    assert "status" in data
+    assert "configured" in data
 
 
 # ==============================================================================
@@ -570,12 +606,12 @@ def test_genuine_caller_speech_triggers_barge_in_after_grace_period():
         speech_pcm = struct.pack(f"<{len(speech_samples)}h", *speech_samples)
         speech_b64 = mulaw_to_base64(pcm16_to_mulaw(speech_pcm))
 
-        # 4 frames (< 5 frames requirement) should not trigger barge-in
-        for _ in range(4):
+        # (BARGE_IN_MIN_SPEECH_FRAMES - 1) frames should not trigger barge-in
+        for _ in range(settings.BARGE_IN_MIN_SPEECH_FRAMES - 1):
             await orchestrator.handle_media(stream_sid, {"payload": speech_b64}, db=MagicMock())
         assert session.interrupted is False
 
-        # 5th frame reaches BARGE_IN_MIN_SPEECH_FRAMES (5) -> triggers barge-in
+        # Next frame reaches BARGE_IN_MIN_SPEECH_FRAMES -> triggers barge-in
         await orchestrator.handle_media(stream_sid, {"payload": speech_b64}, db=MagicMock())
         assert session.interrupted is True
         assert session.playback_generation > initial_gen

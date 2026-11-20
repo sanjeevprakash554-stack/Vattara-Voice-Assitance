@@ -1,10 +1,5 @@
 """Business services package for domain business logic."""
 
-from app.services.twilio_service import (
-    TwilioConfigurationError,
-    TwilioService,
-    get_twilio_service,
-)
 from app.services.appointment_service import book_appointment_core
 from app.services.scheduling_service import (
     calculate_available_slots,
@@ -27,9 +22,6 @@ from app.services.reminder_worker import (
 )
 
 __all__ = [
-    "TwilioConfigurationError",
-    "TwilioService",
-    "get_twilio_service",
     "book_appointment_core",
     "calculate_available_slots",
     "cancel_appointment_core",

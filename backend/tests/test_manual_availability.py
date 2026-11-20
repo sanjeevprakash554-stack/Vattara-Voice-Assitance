@@ -403,6 +403,7 @@ def test_buffer_time_between_appointments_enforced(
         },
         headers=auth_headers,
     )
+    print("DEBUG RES3:", res3.status_code, res3.text)
     assert res3.status_code == status.HTTP_201_CREATED
 
 

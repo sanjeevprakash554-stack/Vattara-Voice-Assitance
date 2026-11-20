@@ -72,16 +72,15 @@ class DatabaseHealthResponse(BaseModel):
     )
 
 
-class TwilioHealthResponse(BaseModel):
-    """Response schema for Twilio telephony connectivity health check."""
+class PlivoHealthResponse(BaseModel):
+    """Response schema for Plivo telephony connectivity health check."""
 
     status: str = Field(..., description="Service status ('connected', 'unconfigured', or 'error')")
-    configured: bool = Field(..., description="Whether Twilio credentials and phone number are configured")
-    account_sid_masked: str | None = Field(default=None, description="Masked Twilio Account SID")
-    account_name: str | None = Field(default=None, description="Twilio Account friendly name if fetched")
-    account_status: str | None = Field(default=None, description="Twilio Account status (e.g. active)")
-    phone_number: str | None = Field(default=None, description="Configured Twilio phone number")
-    public_base_url: str | None = Field(default=None, description="Public Base URL for Twilio webhook callbacks")
+    configured: bool = Field(..., description="Whether Plivo credentials and phone number are configured")
+    auth_id_masked: str | None = Field(default=None, description="Masked Plivo Auth ID")
+    account_name: str | None = Field(default=None, description="Plivo Account friendly name if fetched")
+    phone_number: str | None = Field(default=None, description="Configured Plivo phone number")
+    public_base_url: str | None = Field(default=None, description="Public Base URL for Plivo webhook callbacks")
     details: str = Field(..., description="Health diagnosis detail message")
     timestamp: datetime = Field(..., description="UTC timestamp of the health check")
     error: str | None = Field(default=None, description="Error message if connection failed")
@@ -91,12 +90,11 @@ class TwilioHealthResponse(BaseModel):
             "example": {
                 "status": "connected",
                 "configured": True,
-                "account_sid_masked": "AC6d...de94",
+                "auth_id_masked": "MAND...NKOS",
                 "account_name": "Development Account",
-                "account_status": "active",
-                "phone_number": "+12292523194",
-                "public_base_url": "https://pushiness-disparate-pulmonary.ngrok-free.dev",
-                "details": "Successfully connected to Twilio API.",
+                "phone_number": "+918040008888",
+                "public_base_url": "https://vattara.ai",
+                "details": "Successfully connected to Plivo API.",
                 "timestamp": "2026-11-06T12:00:00Z",
                 "error": None,
             }

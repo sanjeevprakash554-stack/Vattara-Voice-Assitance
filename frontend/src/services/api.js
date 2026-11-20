@@ -487,6 +487,16 @@ export const appointmentsService = {
     );
   },
 
+  getById: async (id) => {
+    return safeApiCall(
+      () => api.get(`/appointments/${id}`),
+      () => {
+        const db = getMockDb();
+        return db.appointments.find((a) => a.id === id) || null;
+      }
+    );
+  },
+
   createAppointment: async (data) => {
     return safeApiCall(
       () => api.post('/appointments', data),
@@ -1153,18 +1163,9 @@ export const integrationsService = {
       () => api.get('/integrations/settings'),
       () => ({
         primary_provider: 'plivo',
-        plivo_auth_id: 'MAMOCK••••••••12345',
-        plivo_phone_number: '+918040001234',
-        is_plivo_verified: true,
-        twilio_account_sid: 'ACmo••••••••9000',
-        twilio_phone_number: '+14155552671',
-        is_twilio_verified: true,
-        smartflo_caller_id: '918040001234',
-        smartflo_api_key: 'tsf_••••••••abcd',
-        is_smartflo_verified: true,
-        exotel_sid: 'ex_••••••••9999',
-        exotel_caller_id: '08088887777',
-        is_exotel_verified: false,
+        plivo_auth_id: null,
+        plivo_phone_number: null,
+        is_plivo_verified: false,
         inbound_webhook_url: 'https://api.vattara.com/api/v1/plivo/incoming',
       })
     );
@@ -1182,9 +1183,9 @@ export const integrationsService = {
       () => api.post('/integrations/test-connection', payload),
       () => ({
         provider: payload.provider,
-        status: 'connected',
-        latency_ms: 142,
-        message: `${payload.provider} trunk ping successful. Gateway reachable.`,
+        status: 'failed',
+        latency_ms: 0,
+        message: `${payload.provider} trunk ping unavailable offline.`,
       })
     );
   },

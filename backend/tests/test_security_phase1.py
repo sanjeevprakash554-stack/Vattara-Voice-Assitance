@@ -111,18 +111,6 @@ def test_api_key_impersonation_blocked(client: TestClient) -> None:
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-def test_configured_api_key_accepted(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Configured API key in EXOTEL_BUSINESS_API_KEYS successfully authenticates for mapped tenant."""
-    test_key = "secure_production_mapped_api_key_884920"
-    monkeypatch.setattr(
-        settings,
-        "EXOTEL_BUSINESS_API_KEYS",
-        f"{test_key}:demo-biz-vattara-health",
-    )
-    headers = {"X-API-Key": test_key}
-    response = client.get("/api/v1/assistant", headers=headers)
-    assert response.status_code == status.HTTP_200_OK
-    assert response.json()["business_id"] == "demo-biz-vattara-health"
 
 
 # ==============================================================================

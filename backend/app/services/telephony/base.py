@@ -1,4 +1,4 @@
-"""Provider-independent abstractions for cloud telephony providers (Twilio, Tata Smartflo, etc.)."""
+"""Provider-independent abstractions for cloud telephony providers."""
 
 from abc import ABC, abstractmethod
 from enum import Enum
